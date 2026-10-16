@@ -25,12 +25,20 @@ Each device serves its registers over Modbus TCP on port 502. The register map i
 [fleet/register_map.toml](fleet/register_map.toml), and [scenarios/](scenarios/README.md)
 changes conditions in the simulated world.
 
+## Networks
+
+| Network | On it | Purpose |
+|---|---|---|
+| `ot` | the devices, `modbus-gateway` | Field devices. Internal, no route out |
+| `ot-dmz` | `modbus-gateway` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
+
 ## Layout
 
-    fleet/       device simulator, register map, Modbus TCP code (standard library only)
-    scenarios/   files that inject conditions into the simulated world (faults, grid events)
-    tests/       unit tests
-
+    fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
+    scenarios/      files that inject conditions into the simulated world (faults, grid events)
+    tests/          unit tests
+    inventory.toml  the asset list: every device, its site and the unit id it's reached by
+    
 ## Status
 
 Work in progress

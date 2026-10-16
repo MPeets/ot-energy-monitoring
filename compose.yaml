@@ -98,6 +98,18 @@ services:
       SITE: sub-d
       FEEDERS: wt-01,wt-02,wt-03,inv-01,inv-02,bess-01
 
+  # The conduit between OT and the DMZ, and the only service on both networks.
+  # Routes requests by unit id (inventory.toml) and passes reads only.
+  modbus-gateway:
+    <<: *python
+    command: ["python", "-u", "-B", "-m", "fleet.gateway"]
+    volumes:
+      - ./fleet:/app/fleet:ro
+      - ./inventory.toml:/app/inventory.toml:ro
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    networks: [ot, ot-dmz]
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the
@@ -109,6 +121,14 @@ services:
     networks: [ot]
     restart: "no"
 
+  # A laptop in the DMZ, same tool: shows what the DMZ side can and can't do
+  dmz-workstation:
+    <<: *python
+    profiles: [tools]
+    entrypoint: ["python", "-u", "-B", "-m", "fleet.cli"]
+    networks: [ot-dmz]
+    restart: "no"
+
   # Unit tests, run with no network at all
   unit-tests:
     <<: *python
@@ -117,10 +137,15 @@ services:
     volumes:
       - ./fleet:/app/fleet:ro
       - ./tests:/app/tests:ro
+      - ./inventory.toml:/app/inventory.toml:ro
     network_mode: none
     restart: "no"
 
 networks:
   # Field devices. internal: true means no route out of this network at all.
   ot:
+    internal: true
+
+  # Conduit from OT to the DMZ. Only the gateway sits on both sides of it.
+  ot-dmz:
     internal: true

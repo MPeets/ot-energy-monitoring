@@ -27,11 +27,15 @@ WRITE_SINGLE_REGISTER = 0x06
 ILLEGAL_FUNCTION = 0x01
 ILLEGAL_DATA_ADDRESS = 0x02
 ILLEGAL_DATA_VALUE = 0x03
+GATEWAY_PATH_UNAVAILABLE = 0x0A  # gateway has no route for this unit id
+GATEWAY_TARGET_FAILED = 0x0B     # gateway has a route, but the device didn't answer
 
 EXCEPTION_NAMES = {
     ILLEGAL_FUNCTION: "Illegal Function",
     ILLEGAL_DATA_ADDRESS: "Illegal Data Address",
     ILLEGAL_DATA_VALUE: "Illegal Data Value",
+    GATEWAY_PATH_UNAVAILABLE: "Gateway Path Unavailable",
+    GATEWAY_TARGET_FAILED: "Gateway Target Device Failed to Respond",
 }
 
 MAX_READ_REGISTERS = 125  # protocol limit for a single read request
@@ -86,8 +90,12 @@ def handle_request(pdu: bytes, bank, on_write=None) -> bytes:
     return struct.pack(f">BB{count}H", function, 2 * count, *table[start:start + count])
 
 
-async def start_server(bank, host: str = "0.0.0.0", port: int = 502, log=print) -> asyncio.Server:
-    """Serves the bank's registers over Modbus TCP until the server is closed."""
+async def serve(handle, host: str = "0.0.0.0", port: int = 502, log=print) -> asyncio.Server:
+    """Runs a Modbus TCP server until it's closed.
+
+    handle(client, unit, pdu) is a coroutine that returns the reply PDU. This
+    takes care of the framing, so devices and the gateway only deal in PDUs.
+    """
 
     async def session(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
@@ -100,11 +108,7 @@ async def start_server(bank, host: str = "0.0.0.0", port: int = 502, log=print) 
                     log(f"dropped connection from {client}: not a Modbus TCP frame")
                     break
                 pdu = await reader.readexactly(length - 1)
-                reply = handle_request(
-                    pdu, bank, on_write=lambda reg, value: log(f"{client} set {reg.name} = {value:g} {reg.unit}")
-                )
-                if reply[0] & 0x80 and (reply[1] == ILLEGAL_FUNCTION or pdu[0] == WRITE_SINGLE_REGISTER):
-                    log(f"refused function {pdu[0]:#04x} from {client}: {EXCEPTION_NAMES.get(reply[1], reply[1])}")
+                reply = await handle(client, unit, pdu)
                 writer.write(MBAP.pack(transaction, 0, len(reply) + 1, unit) + reply)
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
@@ -114,6 +118,19 @@ async def start_server(bank, host: str = "0.0.0.0", port: int = 502, log=print) 
 
     return await asyncio.start_server(session, host, port)
 
+
+async def start_server(bank, host: str = "0.0.0.0", port: int = 502, log=print) -> asyncio.Server:
+    """Serves a device's registers over Modbus TCP until the server is closed."""
+
+    async def handle(client: str, unit: int, pdu: bytes) -> bytes:
+        reply = handle_request(
+            pdu, bank, on_write=lambda reg, value: log(f"{client} set {reg.name} = {value:g} {reg.unit}")
+        )
+        if reply[0] & 0x80 and (reply[1] == ILLEGAL_FUNCTION or pdu[0] == WRITE_SINGLE_REGISTER):
+            log(f"refused function {pdu[0]:#04x} from {client}: {EXCEPTION_NAMES.get(reply[1], reply[1])}")
+        return reply
+
+    return await serve(handle, host, port, log)
 
 def transact(host: str, pdu: bytes, *, port: int = 502, unit: int = 1, timeout: float = 3.0) -> bytes:
     """Sends one request PDU and returns the response PDU. Raises ModbusException on an exception reply."""

@@ -1,0 +1,50 @@
+# The fleet as the monitoring side knows it: every device the gateway routes to
+# and the collector polls. This is the asset list. If a device is in here and
+# isn't reporting, that's an incident; if it isn't in here, monitoring doesn't
+# know it exists.
+#
+# unit: the Modbus unit id the DMZ uses to address the device through the
+# gateway. Numbered by site so they're easy to read: 1x wind, 2x solar,
+# 3x storage, 4x substation.
+
+[[device]]
+id = "wt-01"
+unit = 11
+site = "wind-a"
+type = "turbine"
+
+[[device]]
+id = "wt-02"
+unit = 12
+site = "wind-a"
+type = "turbine"
+
+[[device]]
+id = "wt-03"
+unit = 13
+site = "wind-a"
+type = "turbine"
+
+[[device]]
+id = "inv-01"
+unit = 21
+site = "solar-b"
+type = "inverter"
+
+[[device]]
+id = "inv-02"
+unit = 22
+site = "solar-b"
+type = "inverter"
+
+[[device]]
+id = "bess-01"
+unit = 31
+site = "bess-c"
+type = "battery"
+
+[[device]]
+id = "sub-01"
+unit = 41
+site = "sub-d"
+type = "substation"
