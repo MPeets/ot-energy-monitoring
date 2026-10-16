@@ -40,9 +40,29 @@ and the `*.json` files are gitignored.
 | `fault_code` | number | Trips with this code, e.g. `201` (DC insulation fault) |
 | `maintenance` | true/false | Stops it for planned work |
 
+## Battery (bess-01)
+
+| Key | Type | Effect |
+|---|---|---|
+| `power_kw` | number | Overrides the trading schedule. Negative charges, e.g. `-5000` |
+| `cooling_failure` | true/false | The container's HVAC stops, so cells heat up with current |
+| `fault` | true/false | Trips the battery |
+| `maintenance` | true/false | Stops it for planned work |
+
+Frequency response always runs on top. The battery management system trips at 55 C and
+allows a restart once the cells are below 40 C.
+
+## Substation (sub-01)
+
+| Key | Type | Effect |
+|---|---|---|
+| `cooling_failure` | true/false | Transformer fans and oil pumps stop: same load, about twice the oil temperature rise |
+| `ambient_temperature` | number | Forces the outdoor temperature, in C |
+| `load_kw` | number | Forces the transformer load, as if the fleet exported this much |
+
 ## Grid protection
 
-Turbines and inverters disconnect when their terminals see voltage below 0.85 or above
+Turbines, inverters and the battery disconnect when their terminals see voltage below 0.85 or above
 1.15 per-unit, or frequency outside 47.5 to 51.5 Hz, and reconnect 60 seconds after the grid
 is back in range. So `{"frequency_offset_hz": -2.6}` in `grid.json` trips the whole fleet,
 and `{"voltage_pu": {"l1": 0.8}}` trips one unit.
@@ -59,6 +79,8 @@ Curtailment isn't a scenario. It's a setpoint, written over Modbus the way a par
     echo '{"voltage_pu": {"l2": 0.85}}' > scenarios/wt-01.json    # voltage sag on one phase
     echo '{"wind_speed": 2}' > scenarios/wt-03.json               # calm: 0 kW, and that's fine
     echo '{"fault_code": 201}' > scenarios/inv-02.json            # insulation fault, 0 kW, and that's not
+    echo '{"power_kw": -5000, "cooling_failure": true}' > scenarios/bess-01.json      # cells heating while charging
+    echo '{"cooling_failure": true, "load_kw": 25000}' > scenarios/sub-01.json        # transformer running hot
     rm -f scenarios/*.json                                        # back to normal
 
 Typos and invalid values are reported in the device log (`docker compose logs <device>`)

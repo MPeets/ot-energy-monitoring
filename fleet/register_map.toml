@@ -194,3 +194,67 @@ description = "Active power limit from the park controller, in % of rated power.
 writable = true
 minimum = 0.0
 maximum = 100.0
+
+# Battery storage
+[[battery]]
+name = "soc"
+register = "input"
+address = 30
+type = "UINT16"
+scale = 0.1
+unit = "%"
+description = "State of charge"
+
+[[battery]]
+name = "state"
+register = "input"
+address = 31
+type = "UINT16"
+description = "Operating state. Frequency response runs on top of charging and discharging too."
+values = { 1 = "charging", 2 = "discharging", 3 = "frequency response", 5 = "fault", 6 = "maintenance" }
+
+[[battery]]
+name = "cell_temperature"
+register = "input"
+address = 32
+type = "INT16"
+scale = 0.1
+unit = "C"
+description = "Hottest cell temperature reported by the battery management system"
+
+[[battery]]
+name = "energy_capacity"
+register = "input"
+address = 33
+type = "UINT16"
+unit = "kWh"
+description = "Usable energy capacity"
+
+# Substation at the point of connection. Voltages are on the 110 kV side, and
+# active_power is what the whole fleet exports to the grid.
+[[substation]]
+name = "oil_temperature"
+register = "input"
+address = 30
+type = "INT16"
+scale = 0.1
+unit = "C"
+description = "Transformer top-oil temperature"
+
+[[substation]]
+name = "ambient_temperature"
+register = "input"
+address = 31
+type = "INT16"
+scale = 0.1
+unit = "C"
+description = "Outdoor air temperature at the substation"
+
+[[substation]]
+name = "transformer_load"
+register = "input"
+address = 32
+type = "UINT16"
+scale = 0.1
+unit = "%"
+description = "Transformer loading in % of its rating"

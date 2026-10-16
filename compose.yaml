@@ -80,6 +80,24 @@ services:
       DEVICE_ID: inv-02
       SITE: solar-b
 
+# Storage site C: 5 MW / 10 MWh battery, trading schedule plus frequency response
+  bess-01:
+    <<: *device
+    environment:
+      DEVICE_TYPE: battery
+      DEVICE_ID: bess-01
+      SITE: bess-c
+
+  # Substation D, the point of connection: 110/20 kV, 25 MVA. Its RTU polls
+  # every feeder for active power and reports what the fleet exports.
+  sub-01:
+    <<: *device
+    environment:
+      DEVICE_TYPE: substation
+      DEVICE_ID: sub-01
+      SITE: sub-d
+      FEEDERS: wt-01,wt-02,wt-03,inv-01,inv-02,bess-01
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the

@@ -101,3 +101,14 @@ def irradiance(site: str, t: float) -> float:
     cover = 0.35 + 0.5 * noise(f"{site}:clouds", t, 600) + 0.25 * noise(f"{site}:cloud-edges", t, 45)
     cover = min(max(cover, 0.0), 1.0)
     return clear_sky_irradiance(sun_elevation(t)) * (1 - 0.75 * cover)
+
+
+def ambient_temperature(t: float) -> float:
+    """Outdoor air temperature in degrees C: cold winters, mild summers, warmest
+    in the afternoon. Drives how hot the substation transformer runs."""
+    moment = datetime.fromtimestamp(t, timezone.utc)
+    day = moment.timetuple().tm_yday
+    seasonal = 6.0 - 11.0 * math.cos(2 * math.pi * (day - 20) / 365)  # about -5 in January, 17 in July
+    solar_hours = moment.hour + moment.minute / 60 + LONGITUDE_DEG / 15
+    daily = 4.0 * math.sin(2 * math.pi * (solar_hours - 9) / 24)  # coolest around dawn
+    return seasonal + daily + 1.5 * noise("ambient", t, 1800)
