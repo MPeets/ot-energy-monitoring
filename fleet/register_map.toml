@@ -84,3 +84,68 @@ address = 17
 type = "FLOAT32"
 unit = "V"
 description = "Nominal phase to neutral voltage, so readers can compare in per-unit"
+
+# Output at the device's terminals, generator sign convention: positive means
+# delivered to the grid
+[[common]]
+name = "active_power"
+register = "input"
+address = 19
+type = "INT16"
+unit = "kW"
+description = "Active power"
+
+[[common]]
+name = "reactive_power"
+register = "input"
+address = 20
+type = "INT16"
+unit = "kvar"
+description = "Reactive power"
+
+[[common]]
+name = "rated_power"
+register = "input"
+address = 21
+type = "UINT16"
+unit = "kW"
+description = "Nameplate active power"
+
+# Wind turbine
+[[turbine]]
+name = "wind_speed"
+register = "input"
+address = 30
+type = "UINT16"
+scale = 0.01
+unit = "m/s"
+description = "Nacelle anemometer"
+
+[[turbine]]
+name = "state"
+register = "input"
+address = 31
+type = "UINT16"
+description = "Operating state"
+values = { 1 = "producing", 2 = "low wind", 3 = "curtailed", 4 = "storm stop", 5 = "fault", 6 = "maintenance" }
+
+[[turbine]]
+name = "rotor_speed"
+register = "input"
+address = 32
+type = "UINT16"
+scale = 0.1
+unit = "rpm"
+description = "Rotor speed"
+
+[[turbine]]
+name = "power_limit"
+register = "holding"
+address = 0
+type = "UINT16"
+scale = 0.1
+unit = "%"
+description = "Active power limit from the park controller, in % of rated power. 100 means no limit."
+writable = true
+minimum = 0.0
+maximum = 100.0

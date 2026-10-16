@@ -41,17 +41,34 @@ x-device: &device
   sysctls:
     net.ipv4.ip_unprivileged_port_start: 0
   networks: [ot]
-  
+
 services:
+  # Wind park A: three 3.6 MW turbines sharing one wind field
   wt-01:
     <<: *device
     environment:
       DEVICE_TYPE: turbine
       DEVICE_ID: wt-01
+      SITE: wind-a
+
+  wt-02:
+    <<: *device
+    environment:
+      DEVICE_TYPE: turbine
+      DEVICE_ID: wt-02
+      SITE: wind-a
+
+  wt-03:
+    <<: *device
+    environment:
+      DEVICE_TYPE: turbine
+      DEVICE_ID: wt-03
+      SITE: wind-a
 
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
-  # A laptop plugged into the OT network, for reading devices by hand
+  # A laptop on the OT network: reads devices by hand, and stands in for the
+  # park controller when writing setpoints
   ot-workstation:
     <<: *python
     profiles: [tools]

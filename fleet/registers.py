@@ -12,6 +12,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .modbus import ILLEGAL_DATA_ADDRESS, ILLEGAL_DATA_VALUE, WRITE_SINGLE_REGISTER, ModbusException
+
 MAP_FILE = Path(__file__).with_name("register_map.toml")
 TABLE_SIZE = 100  # registers per table on every simulated device
 
@@ -34,6 +36,10 @@ class Register:
     scale: float = 1.0
     unit: str = ""
     description: str = ""
+    values: dict | None = None    # labels for enumerated values, e.g. states
+    writable: bool = False        # setpoints a controller may write
+    minimum: float | None = None  # accepted range for writes
+    maximum: float | None = None
 
     @property
     def width(self) -> int:
@@ -106,6 +112,8 @@ class RegisterBank:
                 raise ValueError(f"{reg.name}: address outside the {size}-register table")
             if used[reg.register] & span:
                 raise ValueError(f"{reg.name}: overlaps another {reg.register} register")
+            if reg.writable and (reg.register != "holding" or reg.width != 1):
+                raise ValueError(f"{reg.name}: only single holding registers can be writable")
             used[reg.register] |= span
 
     def _table(self, reg: Register) -> list[int]:
@@ -118,3 +126,17 @@ class RegisterBank:
     def get(self, name: str) -> float:
         reg = self.registers[name]
         return decode(reg, self._table(reg)[reg.address:reg.address + reg.width])
+
+    def write(self, address: int, raw: int) -> tuple[Register, float]:
+        """A Modbus write to one holding register. Only writable setpoints accept it,
+        and only within their range, the way device firmware validates setpoints."""
+        for reg in self.registers.values():
+            if reg.register == "holding" and reg.address == address and reg.writable:
+                break
+        else:
+            raise ModbusException(WRITE_SINGLE_REGISTER, ILLEGAL_DATA_ADDRESS)
+        value = decode(reg, (raw,))
+        if (reg.minimum is not None and value < reg.minimum) or (reg.maximum is not None and value > reg.maximum):
+            raise ModbusException(WRITE_SINGLE_REGISTER, ILLEGAL_DATA_VALUE)
+        self.holding[address] = raw
+        return reg, value

@@ -13,8 +13,9 @@ PHASES = ("l1", "l2", "l3")
 
 
 class Device:
-    # Nominal line-to-line voltage at the device's terminals. Subclasses set their own.
-    NOMINAL_VOLTAGE_V = 690.0
+    # Nameplate values. Subclasses set their own.
+    NOMINAL_VOLTAGE_V = 690.0  # line-to-line, at the device's terminals
+    RATED_POWER_KW = 0
 
     # Keys this device accepts in scenarios/<device>.json
     SCENARIO_KEYS = {
@@ -22,8 +23,9 @@ class Device:
         "voltage_pu": phases,           # force phase voltages, e.g. {"l2": 0.85}
     }
 
-    def __init__(self, device_id: str, bank: RegisterBank, register_map: RegisterMap):
+    def __init__(self, device_id: str, bank: RegisterBank, register_map: RegisterMap, site: str | None = None):
         self.device_id = device_id
+        self.site = site or device_id
         self.bank = bank
         self.started = time.monotonic()
         # Registers report phase-to-neutral voltage, so nominal is line voltage / sqrt(3)
@@ -32,6 +34,7 @@ class Device:
         bank.set("device_type", register_map.type_code)
         bank.set("map_version", register_map.version)
         bank.set("voltage_nominal", self.nominal_phase_voltage)
+        bank.set("rated_power", self.RATED_POWER_KW)
 
     def update(self, now: float, scenario: Scenario) -> None:
         """Recomputes every register for wall-clock time `now`. Called once a second."""

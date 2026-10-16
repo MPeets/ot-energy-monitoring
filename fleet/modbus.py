@@ -1,9 +1,13 @@
 """Modbus TCP, only as much of it as this lab needs.
 
-Server side answers function codes 03 (read holding registers) and 04 (read
-input registers), the only requests a monitoring system should ever send.
-Anything else gets exception 01, Illegal Function, which is how a device with
-remote writes disabled answers.
+Devices answer function codes 03 (read holding registers), 04 (read input
+registers) and 06 (write single register). A write is only accepted for a
+setpoint the register map marks writable, such as a turbine's power limit,
+which is how a park controller curtails it. Anything else gets exception 01,
+Illegal Function.
+
+That write path exists on purpose, the way it does on real equipment. Keeping
+monitoring away from it is the network's job, not the device's.
 
 Client side is a small blocking reader for the engineering workstation CLI
 and the tests.
@@ -18,6 +22,7 @@ import struct
 
 READ_HOLDING_REGISTERS = 0x03
 READ_INPUT_REGISTERS = 0x04
+WRITE_SINGLE_REGISTER = 0x06
 
 ILLEGAL_FUNCTION = 0x01
 ILLEGAL_DATA_ADDRESS = 0x02
@@ -51,24 +56,33 @@ def exception_response(function: int, code: int) -> bytes:
     return bytes([function | 0x80, code])
 
 
-def handle_request(pdu: bytes, bank) -> bytes:
-    """Answers one request PDU (function code + data) from a device's register tables."""
-    function = pdu[0]
-    if function == READ_HOLDING_REGISTERS:
-        table = bank.holding
-    elif function == READ_INPUT_REGISTERS:
-        table = bank.input
-    else:
-        return exception_response(function, ILLEGAL_FUNCTION)
+def handle_request(pdu: bytes, bank, on_write=None) -> bytes:
+    """Answers one request PDU (function code + data) from a device's register tables.
 
+    on_write(register, value) is called after a write is accepted.
+    """
+    function = pdu[0]
+    if function not in (READ_HOLDING_REGISTERS, READ_INPUT_REGISTERS, WRITE_SINGLE_REGISTER):
+        return exception_response(function, ILLEGAL_FUNCTION)
     if len(pdu) != 5:
         return exception_response(function, ILLEGAL_DATA_VALUE)
+
+    if function == WRITE_SINGLE_REGISTER:
+        address, raw = struct.unpack(">HH", pdu[1:])
+        try:
+            register, value = bank.write(address, raw)
+        except ModbusException as exc:
+            return exception_response(function, exc.code)
+        if on_write:
+            on_write(register, value)
+        return pdu  # a successful write echoes the request
+
+    table = bank.holding if function == READ_HOLDING_REGISTERS else bank.input
     start, count = struct.unpack(">HH", pdu[1:])
     if not 1 <= count <= MAX_READ_REGISTERS:
         return exception_response(function, ILLEGAL_DATA_VALUE)
     if start + count > len(table):
         return exception_response(function, ILLEGAL_DATA_ADDRESS)
-
     return struct.pack(f">BB{count}H", function, 2 * count, *table[start:start + count])
 
 
@@ -86,9 +100,11 @@ async def start_server(bank, host: str = "0.0.0.0", port: int = 502, log=print) 
                     log(f"dropped connection from {client}: not a Modbus TCP frame")
                     break
                 pdu = await reader.readexactly(length - 1)
-                reply = handle_request(pdu, bank)
-                if reply[0] & 0x80 and reply[1] == ILLEGAL_FUNCTION:
-                    log(f"refused function {pdu[0]:#04x} from {client}")
+                reply = handle_request(
+                    pdu, bank, on_write=lambda reg, value: log(f"{client} set {reg.name} = {value:g} {reg.unit}")
+                )
+                if reply[0] & 0x80 and (reply[1] == ILLEGAL_FUNCTION or pdu[0] == WRITE_SINGLE_REGISTER):
+                    log(f"refused function {pdu[0]:#04x} from {client}: {EXCEPTION_NAMES.get(reply[1], reply[1])}")
                 writer.write(MBAP.pack(transaction, 0, len(reply) + 1, unit) + reply)
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):

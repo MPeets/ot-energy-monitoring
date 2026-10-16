@@ -21,6 +21,8 @@ from pathlib import Path
 def number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
+def flag(value) -> bool:
+    return isinstance(value, bool)
 
 def phases(value) -> bool:
     return isinstance(value, dict) and set(value) <= {"l1", "l2", "l3"} and all(map(number, value.values()))

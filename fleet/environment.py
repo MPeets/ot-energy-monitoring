@@ -54,3 +54,12 @@ def phase_voltages_pu(key: str, t: float) -> tuple[float, float, float]:
         1.0 + shared + 0.003 * _random(f"{key}:unbalance", phase) + 0.001 * noise(f"{key}:l{phase}", t, 10)
         for phase in (1, 2, 3)
     )
+
+
+def wind_speed(site: str, t: float) -> float:
+    """Mean wind over one park in m/s: swings over hours plus gusts lasting minutes.
+
+    Ranges roughly 3.5 to 13 m/s, so the turbines spend most of the time
+    producing and some of it at rated power.
+    """
+    return 8.5 + 3.0 * math.sin(2 * math.pi * t / 5400 + math.pi * _random(site, 0)) + 1.5 * noise(f"{site}:wind", t, 120)

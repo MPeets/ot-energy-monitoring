@@ -12,6 +12,16 @@ class FakeBank:
         self.input = list(range(10))
         self.holding = [100 + i for i in range(10)]
 
+    def write(self, address, raw):
+        raise modbus.ModbusException(modbus.WRITE_SINGLE_REGISTER, modbus.ILLEGAL_DATA_ADDRESS)
+
+
+def setpoint_bank() -> RegisterBank:
+    return RegisterBank({
+        "limit": Register("limit", "holding", 0, "UINT16", scale=0.1, unit="%", writable=True, minimum=0, maximum=100),
+        "status": Register("status", "holding", 1, "UINT16"),
+    })
+
 
 def read_pdu(function: int, start: int, count: int) -> bytes:
     return struct.pack(">BHH", function, start, count)
@@ -29,12 +39,33 @@ class HandleRequestTest(unittest.TestCase):
         reply = modbus.handle_request(read_pdu(0x03, 0, 1), self.bank)
         self.assertEqual(reply, bytes([0x03, 2, 0, 100]))
 
-    def test_writes_are_refused_as_illegal_function(self):
-        write_single = struct.pack(">BHH", 0x06, 0, 0)
+    def test_unsupported_functions_are_illegal_function(self):
         write_multiple = struct.pack(">BHHBH", 0x10, 0, 1, 2, 0)
-        for pdu in (write_single, write_multiple):
+        write_coil = struct.pack(">BHH", 0x05, 0, 0xFF00)
+        for pdu in (write_multiple, write_coil):
             self.assertEqual(modbus.handle_request(pdu, self.bank), bytes([pdu[0] | 0x80, 0x01]))
         self.assertEqual(self.bank.holding[0], 100)
+
+    def test_write_to_a_writable_setpoint_is_echoed(self):
+        bank = setpoint_bank()
+        written = []
+        pdu = struct.pack(">BHH", 0x06, 0, 500)
+        reply = modbus.handle_request(pdu, bank, on_write=lambda reg, value: written.append((reg.name, value)))
+        self.assertEqual(reply, pdu)
+        self.assertAlmostEqual(bank.get("limit"), 50.0)
+        self.assertEqual(written, [("limit", 50.0)])
+
+    def test_write_to_a_read_only_register_is_illegal_address(self):
+        bank = setpoint_bank()
+        reply = modbus.handle_request(struct.pack(">BHH", 0x06, 1, 7), bank)
+        self.assertEqual(reply, bytes([0x86, 0x02]))
+        self.assertEqual(bank.holding[1], 0)
+
+    def test_write_outside_the_setpoint_range_is_illegal_value(self):
+        bank = setpoint_bank()
+        reply = modbus.handle_request(struct.pack(">BHH", 0x06, 0, 1500), bank)  # 150 %
+        self.assertEqual(reply, bytes([0x86, 0x03]))
+        self.assertEqual(bank.holding[0], 0)
 
     def test_reading_past_the_table_is_illegal_address(self):
         reply = modbus.handle_request(read_pdu(0x04, 8, 3), self.bank)
@@ -85,6 +116,11 @@ class RegisterBankTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "overlaps"):
             RegisterBank(registers)
 
+    def test_only_single_holding_registers_can_be_writable(self):
+        for reg in (Register("a", "input", 0, "UINT16", writable=True), Register("b", "holding", 0, "UINT32", writable=True)):
+            with self.subTest(reg=reg.name), self.assertRaisesRegex(ValueError, "writable"):
+                RegisterBank({reg.name: reg})
+
     def test_same_address_in_different_tables_is_fine(self):
         registers = {
             "a": Register("a", "input", 0, "UINT16"),
@@ -123,11 +159,15 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         words = await self.call(modbus.read_registers, "127.0.0.1", modbus.READ_INPUT_REGISTERS, 1, 3)
         self.assertEqual(words, [1, 2, 3])
 
-    async def test_write_over_tcp_is_refused_and_logged(self):
+    async def test_refused_requests_over_tcp_are_logged(self):
+        with self.assertRaises(modbus.ModbusException) as caught:
+            await self.call(modbus.transact, "127.0.0.1", struct.pack(">BHHBH", 0x10, 0, 1, 2, 0))
+        self.assertEqual(caught.exception.code, modbus.ILLEGAL_FUNCTION)
         with self.assertRaises(modbus.ModbusException) as caught:
             await self.call(modbus.transact, "127.0.0.1", struct.pack(">BHH", 0x06, 0, 0))
-        self.assertEqual(caught.exception.code, modbus.ILLEGAL_FUNCTION)
-        self.assertTrue(any("refused function 0x06" in line for line in self.log))
+        self.assertEqual(caught.exception.code, modbus.ILLEGAL_DATA_ADDRESS)
+        self.assertTrue(any("refused function 0x10" in line for line in self.log))
+        self.assertTrue(any("refused function 0x06" in line and "Illegal Data Address" in line for line in self.log))
 
     async def test_reply_echoes_the_unit_id(self):
         reply = await self.call(modbus.transact, "127.0.0.1", read_pdu(0x03, 0, 1), unit=7)
