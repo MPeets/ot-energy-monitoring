@@ -7,7 +7,7 @@ import time
 
 from .. import environment
 from ..registers import RegisterBank, RegisterMap
-from ..scenarios import Scenario, number, phases
+from ..scenarios import Scenario, flag, number, phases
 
 PHASES = ("l1", "l2", "l3")
 
@@ -62,6 +62,7 @@ class Device:
     SCENARIO_KEYS = {
         "frequency_offset_hz": number,  # a meter that reads wrong
         "voltage_pu": phases,           # force phase voltages, e.g. {"l2": 0.85}
+        "frozen": flag,                 # keeps answering, registers stop changing
     }
 
     def __init__(self, device_id: str, bank: RegisterBank, register_map: RegisterMap, site: str | None = None):
@@ -77,8 +78,18 @@ class Device:
         bank.set("voltage_nominal", self.nominal_phase_voltage)
         bank.set("rated_power", self.RATED_POWER_KW)
 
+    def step(self, now: float, scenario: Scenario) -> None:
+        """One tick of the simulation, called once a second.
+
+        A frozen device still answers on Modbus, but its registers stop
+        changing: a controller whose application has hung while its comms
+        side keeps serving the last values. Its readings look perfectly valid.
+        """
+        if not scenario.device.get("frozen"):
+            self.update(now, scenario)
+
     def update(self, now: float, scenario: Scenario) -> None:
-        """Recomputes every register for wall-clock time `now`. Called once a second."""
+        """Recomputes every register for wall-clock time `now`."""
         self.bank.set("heartbeat", time.monotonic() - self.started)
 
         frequency = (

@@ -68,6 +68,15 @@ class DeviceTest(unittest.TestCase):
         nominal = bank.get("voltage_nominal")
         self.assertAlmostEqual(bank.get("voltage_l2") / nominal, 0.85, places=4)
         self.assertAlmostEqual(bank.get("voltage_l1") / nominal, 1.0, delta=0.02)
+    
+    def test_a_frozen_device_keeps_its_last_values(self):
+        device, bank = make_device()
+        device.step(NOW, Scenario())
+        before = list(bank.input)
+        device.step(NOW + 30, Scenario(device={"frozen": True}))
+        self.assertEqual(bank.input, before)  # heartbeat included
+        device.step(NOW + 31, Scenario())
+        self.assertNotEqual(bank.input, before)
 
 
 class ScenarioWatcherTest(unittest.TestCase):

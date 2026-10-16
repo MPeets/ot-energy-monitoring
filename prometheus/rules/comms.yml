@@ -1,0 +1,109 @@
+# Data path health: can we see the fleet at all, and is what we see current?
+#
+# "No data" and "no output" are different incidents. A site reporting 0 MW is
+# a generation question. A site we can't hear from is a communications
+# question, and its last known values say nothing about what it's doing now.
+# None of the rules here look at power, so a calm day or a curtailed park can
+# never trip them.
+groups:
+  - name: comms-recording
+    rules:
+      # 1 if the collector got data from the device in the last minute, else 0.
+      # Built on Telegraf's per-device gather counter, which exists for every
+      # device in the inventory whether it answers or not, so a silent device
+      # reads 0 instead of disappearing.
+      - record: device:reachable:bool
+        expr: increase(internal_gather_metrics_gathered{input="modbus"}[1m]) > bool 0
+
+      # Share of a site's devices the collector can hear
+      - record: site:devices_reachable:ratio
+        expr: avg by (site) (device:reachable:bool)
+
+  - name: comms
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: Always firing. Proves the alerting pipeline is alive.
+          description: >-
+            If this alert stops arriving at the receiver, alerting itself is broken,
+            however quiet everything else looks.
+
+      - alert: CollectorDown
+        expr: up{job="collector"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus can't scrape the collector in the DMZ
+          description: >-
+            No readings from any device are arriving. The fleet may be running normally,
+            but nothing about it is visible until the collector is back.
+          runbook: docs/runbook.md#collectordown
+
+      - alert: FleetSilent
+        expr: max(device:reachable:bool) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The collector is up but no device in the fleet is answering
+          description: >-
+            Every device went quiet at once. That points at the common path (the Modbus
+            gateway or the OT/DMZ conduit), not at the devices.
+          runbook: docs/runbook.md#fleetsilent
+
+      - alert: SiteSilent
+        expr: site:devices_reachable:ratio == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No data from any device at {{ $labels.site }}"
+          description: >-
+            The collector can't read any device at {{ $labels.site }}. The site's last
+            values are not current. It may be producing normally or not at all.
+          runbook: docs/runbook.md#sitesilent
+
+      - alert: DeviceSilent
+        expr: device:reachable:bool == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No data from {{ $labels.device }} at {{ $labels.site }}"
+          description: "The collector hasn't been able to read {{ $labels.device }} for over a minute."
+          runbook: docs/runbook.md#devicesilent
+
+      - alert: DeviceDataFrozen
+        # The device answers, but its heartbeat counter has stopped. Its
+        # readings look valid and aren't changing: the most misleading failure
+        # a SCADA system has.
+        expr: |
+          changes(fleet_heartbeat_seconds[2m]) == 0
+          and on (device)
+          device:reachable:bool == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Readings from {{ $labels.device }} have stopped changing"
+          description: >-
+            {{ $labels.device }} still answers, but its heartbeat hasn't moved for over 2
+            minutes. Every value it reports is stale, even though none of them look wrong.
+          runbook: docs/runbook.md#devicedatafrozen
+
+      - alert: RegisterMapMismatch
+        # The collector config is generated for register map v1. A device on any
+        # other version (a firmware update, a replaced unit) may have moved
+        # registers, and its numbers would be decoded wrong without looking wrong.
+        expr: fleet_map_version != 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} reports register map v{{ $value }}, the collector expects v1"
+          description: "Readings from {{ $labels.device }} can't be trusted until the collector config is regenerated for its map."
+          runbook: docs/runbook.md#registermapmismatch

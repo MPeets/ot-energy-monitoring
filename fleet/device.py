@@ -46,7 +46,7 @@ async def main() -> None:
     async with server:
         while True:
             await asyncio.sleep(1)
-            model.update(time.time(), scenarios.poll())
+            model.step(time.time(), scenarios.poll())
 
 
 if __name__ == "__main__":

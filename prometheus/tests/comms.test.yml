@@ -1,0 +1,231 @@
+# Unit tests for prometheus/rules/comms.yml. Run with:
+#   promtool test rules prometheus/tests/*.yml
+#
+# Series are sampled every 10 s, like the real collector scrape. The gather
+# counter goes up by one per successful read; a flat counter means silence.
+rule_files:
+  - ../rules/comms.yml
+
+evaluation_interval: 10s
+
+tests:
+  # Watchdog must always fire, otherwise the dead man's switch is useless
+  - interval: 10s
+    alert_rule_test:
+      - eval_time: 10s
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+            exp_annotations:
+              summary: Always firing. Proves the alerting pipeline is alive.
+              description: If this alert stops arriving at the receiver, alerting itself is broken, however quiet everything else looks.
+
+  # Zero output is not silence: a device reporting 0 W keeps every comms alert quiet
+  - interval: 10s
+    input_series:
+      - series: 'up{job="collector", instance="collector:9273"}'
+        values: '1x60'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x60'
+      - series: 'fleet_heartbeat_seconds{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '0+10x60'
+      - series: 'fleet_active_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '0x60'
+      - series: 'fleet_map_version{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: DeviceSilent
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: SiteSilent
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FleetSilent
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: DeviceDataFrozen
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: CollectorDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: RegisterMapMismatch
+        exp_alerts: []
+
+  # One turbine goes quiet at 2m while the rest of its site keeps reporting:
+  # DeviceSilent after a minute without reads plus a minute pending, no SiteSilent
+  - interval: 10s
+    input_series:
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x60'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-02", site="wind-a"}'
+        values: '0+1x12 12x48'
+    alert_rule_test:
+      - eval_time: 3m30s
+        alertname: DeviceSilent
+        exp_alerts: []
+      - eval_time: 4m30s
+        alertname: DeviceSilent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              input: modbus
+              device: wt-02
+              site: wind-a
+            exp_annotations:
+              summary: "No data from wt-02 at wind-a"
+              description: "The collector hasn't been able to read wt-02 for over a minute."
+              runbook: docs/runbook.md#devicesilent
+      - eval_time: 4m30s
+        alertname: SiteSilent
+        exp_alerts: []
+
+  # A whole site goes quiet while another keeps reporting: SiteSilent for that
+  # site only (its DeviceSilent alerts get inhibited in Alertmanager), no FleetSilent
+  - interval: 10s
+    input_series:
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x12 12x48'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-02", site="wind-a"}'
+        values: '0+1x12 12x48'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="inv-01", site="solar-b"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 4m30s
+        alertname: SiteSilent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              site: wind-a
+            exp_annotations:
+              summary: "No data from any device at wind-a"
+              description: "The collector can't read any device at wind-a. The site's last values are not current. It may be producing normally or not at all."
+              runbook: docs/runbook.md#sitesilent
+      - eval_time: 4m30s
+        alertname: FleetSilent
+        exp_alerts: []
+
+  # Everything goes quiet at the same moment: suspect the common path
+  - interval: 10s
+    input_series:
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x12 12x48'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="inv-01", site="solar-b"}'
+        values: '0+1x12 12x48'
+    alert_rule_test:
+      - eval_time: 4m30s
+        alertname: FleetSilent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: The collector is up but no device in the fleet is answering
+              description: "Every device went quiet at once. That points at the common path (the Modbus gateway or the OT/DMZ conduit), not at the devices."
+              runbook: docs/runbook.md#fleetsilent
+
+  # The collector itself goes away at 2m: CollectorDown, and no flood of
+  # per-device alerts, because their series disappear rather than reading 0
+  - interval: 10s
+    input_series:
+      - series: 'up{job="collector", instance="collector:9273"}'
+        values: '1x12 0x48'
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x12 _x48'
+    alert_rule_test:
+      - eval_time: 3m50s
+        alertname: CollectorDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: collector
+              instance: collector:9273
+            exp_annotations:
+              summary: Prometheus can't scrape the collector in the DMZ
+              description: "No readings from any device are arriving. The fleet may be running normally, but nothing about it is visible until the collector is back."
+              runbook: docs/runbook.md#collectordown
+      - eval_time: 6m
+        alertname: DeviceSilent
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: FleetSilent
+        exp_alerts: []
+
+  # Reads keep succeeding but the heartbeat stops at 2m: frozen data.
+  # Two minutes for the heartbeat window to go flat, one minute pending.
+  - interval: 10s
+    input_series:
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="inv-02", site="solar-b"}'
+        values: '0+1x60'
+      - series: 'fleet_heartbeat_seconds{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0+10x12 120x48'
+    alert_rule_test:
+      - eval_time: 4m30s
+        alertname: DeviceDataFrozen
+        exp_alerts: []
+      - eval_time: 5m30s
+        alertname: DeviceDataFrozen
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: inv-02
+              device_type: inverter
+              site: solar-b
+            exp_annotations:
+              summary: "Readings from inv-02 have stopped changing"
+              description: "inv-02 still answers, but its heartbeat hasn't moved for over 2 minutes. Every value it reports is stale, even though none of them look wrong."
+              runbook: docs/runbook.md#devicedatafrozen
+      - eval_time: 5m30s
+        alertname: DeviceSilent
+        exp_alerts: []
+
+  # A device that went silent also has a flat heartbeat for a while, because
+  # the collector keeps serving its last values until they expire. That's
+  # silence, not frozen data. The flat stretch here is 90 s, longer than the
+  # collector's 60 s expiry, and without the reachability check in the rule
+  # this would fire at 5m.
+  - interval: 10s
+    input_series:
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="inv-02", site="solar-b"}'
+        values: '0+1x12 12x48'
+      - series: 'fleet_heartbeat_seconds{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0+10x12 120x8 _x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: DeviceDataFrozen
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: DeviceSilent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              input: modbus
+              device: inv-02
+              site: solar-b
+            exp_annotations:
+              summary: "No data from inv-02 at solar-b"
+              description: "The collector hasn't been able to read inv-02 for over a minute."
+              runbook: docs/runbook.md#devicesilent
+
+  # A device reporting a register map the collector wasn't generated for
+  - interval: 10s
+    input_series:
+      - series: 'fleet_map_version{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '2x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RegisterMapMismatch
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: RegisterMapMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: wt-03
+              device_type: turbine
+              site: wind-a
+            exp_annotations:
+              summary: "wt-03 reports register map v2, the collector expects v1"
+              description: "Readings from wt-03 can't be trusted until the collector config is regenerated for its map."
+              runbook: docs/runbook.md#registermapmismatch

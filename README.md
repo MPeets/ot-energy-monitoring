@@ -42,10 +42,28 @@ Three services sit on two networks: the gateway, the collector and Prometheus. N
 routes traffic between its networks; each only speaks its own protocol to the next zone.
 `scripts/check-segmentation.sh` tests every path from inside each network.
 
+## Alerts
+
+| Alert | Severity | Means |
+|---|---|---|
+| CollectorDown | critical | Prometheus can't scrape the collector: no data from anywhere |
+| FleetSilent | critical | Every device went quiet at once: suspect the gateway or the conduit |
+| SiteSilent | critical | No device at a site answers: you're blind to it |
+| DeviceSilent | warning | One device doesn't answer |
+| DeviceDataFrozen | warning | A device answers, but its heartbeat stopped: every value it shows is stale |
+| RegisterMapMismatch | warning | A device's register map isn't the one the collector decodes |
+| Watchdog | none | Always firing, proves alerting works |
+
+"No data" and "no output" are kept apart on purpose: none of the alerts above look at power, so
+a calm day or a curtailed park can't trip them, and a silent site never looks like a site making
+0 MW. Every alert has unit tests (`prometheus/tests/`), including cases that must not fire, and
+a section in [docs/runbook.md](docs/runbook.md).
+
 ## Layout
 
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
-    prometheus/     Prometheus config
+    docs/           runbook
+    prometheus/     Prometheus config, alert rules and their unit tests
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
     scripts/        helper scripts

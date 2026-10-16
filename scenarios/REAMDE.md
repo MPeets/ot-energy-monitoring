@@ -21,6 +21,7 @@ and the `*.json` files are gitignored.
 |---|---|---|
 | `frequency_offset_hz` | number | This device's meter reads off by this much (the grid itself is fine) |
 | `voltage_pu` | object | Forces phase voltages in per-unit, e.g. `{"l2": 0.85}` |
+| `frozen` | true/false | Keeps answering on Modbus, but every register stops changing (a hung controller) |
 
 ## Turbines (wt-*)
 
@@ -81,6 +82,7 @@ Curtailment isn't a scenario. It's a setpoint, written over Modbus the way a par
     echo '{"fault_code": 201}' > scenarios/inv-02.json            # insulation fault, 0 kW, and that's not
     echo '{"power_kw": -5000, "cooling_failure": true}' > scenarios/bess-01.json      # cells heating while charging
     echo '{"cooling_failure": true, "load_kw": 25000}' > scenarios/sub-01.json        # transformer running hot
+    echo '{"frozen": true}' > scenarios/inv-02.json               # answers with stale values
     rm -f scenarios/*.json                                        # back to normal
 
 Typos and invalid values are reported in the device log (`docker compose logs <device>`)
