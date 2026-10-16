@@ -31,6 +31,24 @@ and the `*.json` files are gitignored.
 | `fault` | true/false | Trips the turbine |
 | `maintenance` | true/false | Stops it for planned work |
 
+## Solar inverters (inv-*)
+
+| Key | Type | Effect |
+|---|---|---|
+| `irradiance` | number | Forces the pyranometer reading in W/m2, handy when testing after dark |
+| `performance` | number | 0 to 1, e.g. `0.7` for blown string fuses or heavy soiling. No fault code |
+| `fault_code` | number | Trips with this code, e.g. `201` (DC insulation fault) |
+| `maintenance` | true/false | Stops it for planned work |
+
+## Grid protection
+
+Turbines and inverters disconnect when their terminals see voltage below 0.85 or above
+1.15 per-unit, or frequency outside 47.5 to 51.5 Hz, and reconnect 60 seconds after the grid
+is back in range. So `{"frequency_offset_hz": -2.6}` in `grid.json` trips the whole fleet,
+and `{"voltage_pu": {"l1": 0.8}}` trips one unit.
+
+## Setpoints
+
 Curtailment isn't a scenario. It's a setpoint, written over Modbus the way a park controller does it:
 
     docker compose run --rm ot-workstation write wt-02 power_limit 0
@@ -39,8 +57,9 @@ Curtailment isn't a scenario. It's a setpoint, written over Modbus the way a par
 
     echo '{"frequency_offset_hz": -0.3}' > scenarios/grid.json    # grid event, 49.7 Hz everywhere
     echo '{"voltage_pu": {"l2": 0.85}}' > scenarios/wt-01.json    # voltage sag on one phase
-    rm -f scenarios/*.json                                        # back to normal
     echo '{"wind_speed": 2}' > scenarios/wt-03.json               # calm: 0 kW, and that's fine
+    echo '{"fault_code": 201}' > scenarios/inv-02.json            # insulation fault, 0 kW, and that's not
+    rm -f scenarios/*.json                                        # back to normal
 
 Typos and invalid values are reported in the device log (`docker compose logs <device>`)
 instead of being silently ignored.

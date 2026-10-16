@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import environment
 from ..scenarios import Scenario, flag, number
-from .base import Device
+from .base import Device, GridProtection
 
 # A generic 3.6 MW class turbine
 CUT_IN_MS = 3.0       # starts producing
@@ -46,6 +46,7 @@ class Turbine(Device):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.storm_stopped = False
+        self.protection = GridProtection()
         self.bank.set("power_limit", 100.0)  # no limit until the park controller sets one
 
     def update(self, now: float, scenario: Scenario) -> None:
@@ -67,7 +68,9 @@ class Turbine(Device):
         available = power_curve(wind, self.RATED_POWER_KW) * performance
         limit = self.bank.get("power_limit") / 100 * self.RATED_POWER_KW
 
-        if conditions.get("fault"):
+        tripped = self.protection.check(now, self.frequency, self.phase_pu)
+
+        if conditions.get("fault") or tripped:
             state, power = FAULT, 0.0
         elif conditions.get("maintenance"):
             state, power = MAINTENANCE, 0.0

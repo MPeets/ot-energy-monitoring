@@ -6,6 +6,7 @@ from fleet.models import turbine
 from fleet.models.turbine import CURTAILED, FAULT, LOW_WIND, MAINTENANCE, PRODUCING, STORM_STOP, power_curve
 from fleet.registers import RegisterBank, load_map
 from fleet.scenarios import Scenario
+from fleet.models.base import RECONNECT_DELAY_S
 
 NOW = 1_800_000_000
 RATED = 3600
@@ -82,6 +83,13 @@ class TurbineStateTest(unittest.TestCase):
         self.assertEqual(run(self.device, self.bank, wind_speed=10.0, fault=True), (FAULT, 0))
         self.assertEqual(run(self.device, self.bank, wind_speed=10.0, maintenance=True), (MAINTENANCE, 0))
         self.assertEqual(self.bank.get("rotor_speed"), 0)
+    
+    def test_grid_protection_trips_the_turbine_until_the_grid_has_been_back_a_while(self):
+        self.assertEqual(run(self.device, self.bank, wind_speed=10.0, voltage_pu={"l3": 1.2}), (FAULT, 0))
+        self.device.update(NOW + 30, Scenario(device={"wind_speed": 10.0}))
+        self.assertEqual(self.bank.get("state"), FAULT)
+        self.device.update(NOW + 30 + RECONNECT_DELAY_S, Scenario(device={"wind_speed": 10.0}))
+        self.assertEqual(self.bank.get("state"), PRODUCING)
 
     def test_storm_stop_waits_for_the_wind_to_drop_before_restarting(self):
         self.assertEqual(run(self.device, self.bank, wind_speed=26.0), (STORM_STOP, 0))

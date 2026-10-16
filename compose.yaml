@@ -65,6 +65,21 @@ services:
       DEVICE_ID: wt-03
       SITE: wind-a
 
+  # Solar park B: two 2.5 MW central inverters, 3 MWp of modules each
+  inv-01:
+    <<: *device
+    environment:
+      DEVICE_TYPE: inverter
+      DEVICE_ID: inv-01
+      SITE: solar-b
+
+  inv-02:
+    <<: *device
+    environment:
+      DEVICE_TYPE: inverter
+      DEVICE_ID: inv-02
+      SITE: solar-b
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the

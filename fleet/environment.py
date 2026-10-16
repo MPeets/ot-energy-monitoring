@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import math
+from datetime import datetime, timezone
 
 NOMINAL_FREQUENCY_HZ = 50.0
+
+# Where the simulated parks are. Roughly Baltic, so day length and sun height
+# through the year look right. Not any real site.
+LATITUDE_DEG = 58.0
+LONGITUDE_DEG = 25.0
 
 
 def _random(key: str, bucket: int) -> float:
@@ -63,3 +69,35 @@ def wind_speed(site: str, t: float) -> float:
     producing and some of it at rated power.
     """
     return 8.5 + 3.0 * math.sin(2 * math.pi * t / 5400 + math.pi * _random(site, 0)) + 1.5 * noise(f"{site}:wind", t, 120)
+
+
+def sun_elevation(t: float, latitude: float = LATITUDE_DEG, longitude: float = LONGITUDE_DEG) -> float:
+    """Height of the sun above the horizon in degrees. Good to about a degree,
+    which is plenty for a simulated pyranometer."""
+    moment = datetime.fromtimestamp(t, timezone.utc)
+    day = moment.timetuple().tm_yday
+    declination = math.radians(23.44) * math.sin(2 * math.pi * (284 + day) / 365)
+    b = 2 * math.pi * (day - 81) / 364
+    equation_of_time_min = 9.87 * math.sin(2 * b) - 7.53 * math.cos(b) - 1.5 * math.sin(b)
+    utc_hours = moment.hour + moment.minute / 60 + moment.second / 3600
+    solar_hours = utc_hours + longitude / 15 + equation_of_time_min / 60
+    hour_angle = math.radians(15 * (solar_hours - 12))
+    lat = math.radians(latitude)
+    sin_elevation = math.sin(lat) * math.sin(declination) + math.cos(lat) * math.cos(declination) * math.cos(hour_angle)
+    return math.degrees(math.asin(sin_elevation))
+
+
+def clear_sky_irradiance(elevation_deg: float) -> float:
+    """Irradiance on a cloudless day in W/m2 (Haurwitz clear-sky model)."""
+    if elevation_deg <= 0:
+        return 0.0
+    cos_zenith = math.sin(math.radians(elevation_deg))
+    return 1098 * cos_zenith * math.exp(-0.057 / cos_zenith)
+
+
+def irradiance(site: str, t: float) -> float:
+    """What the park's pyranometer reads in W/m2: clear sky dimmed by passing
+    clouds. Zero at night, which is a normal state, not a fault."""
+    cover = 0.35 + 0.5 * noise(f"{site}:clouds", t, 600) + 0.25 * noise(f"{site}:cloud-edges", t, 45)
+    cover = min(max(cover, 0.0), 1.0)
+    return clear_sky_irradiance(sun_elevation(t)) * (1 - 0.75 * cover)

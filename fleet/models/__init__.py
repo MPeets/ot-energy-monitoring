@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from ..registers import RegisterBank, RegisterMap
 from .base import Device
+from .inverter import Inverter
 from .turbine import Turbine
 
 # Types without their own model yet use the base one. The rest arrive one commit at a time.
 MODELS: dict[str, type[Device]] = {
     "turbine": Turbine,
-    "inverter": Device,
+    "inverter": Inverter,
     "battery": Device,
     "substation": Device,
 }

@@ -149,3 +149,48 @@ description = "Active power limit from the park controller, in % of rated power.
 writable = true
 minimum = 0.0
 maximum = 100.0
+
+# Solar inverter
+[[inverter]]
+name = "irradiance"
+register = "input"
+address = 30
+type = "UINT16"
+unit = "W/m2"
+description = "Plane-of-array irradiance from the park's pyranometer"
+
+[[inverter]]
+name = "state"
+register = "input"
+address = 31
+type = "UINT16"
+description = "Operating state"
+values = { 1 = "producing", 2 = "standby", 3 = "curtailed", 5 = "fault", 6 = "maintenance" }
+
+[[inverter]]
+name = "fault_code"
+register = "input"
+address = 32
+type = "UINT16"
+description = "Active fault, 0 when healthy. 1xx are grid protection trips."
+values = { 0 = "none", 101 = "grid overvoltage", 102 = "grid undervoltage", 103 = "grid frequency out of range", 201 = "DC insulation fault", 301 = "overtemperature" }
+
+[[inverter]]
+name = "dc_capacity"
+register = "input"
+address = 33
+type = "UINT16"
+unit = "kWp"
+description = "PV module capacity connected to this inverter"
+
+[[inverter]]
+name = "power_limit"
+register = "holding"
+address = 0
+type = "UINT16"
+scale = 0.1
+unit = "%"
+description = "Active power limit from the park controller, in % of rated power. 100 means no limit."
+writable = true
+minimum = 0.0
+maximum = 100.0
