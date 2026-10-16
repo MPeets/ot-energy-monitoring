@@ -30,12 +30,15 @@ changes conditions in the simulated world.
 | Network | On it | Purpose |
 |---|---|---|
 | `ot` | the devices, `modbus-gateway` | Field devices. Internal, no route out |
-| `ot-dmz` | `modbus-gateway` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
+| `ot-dmz` | `modbus-gateway`, `collector` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
+| `dmz-it` | `collector` | Conduit from the DMZ to IT. Carries the collector's metrics endpoint, nothing else |
 
 ## Layout
 
+    collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
+    scripts/        helper scripts
     tests/          unit tests
     inventory.toml  the asset list: every device, its site and the unit id it's reached by
     

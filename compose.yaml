@@ -110,6 +110,20 @@ services:
       net.ipv4.ip_unprivileged_port_start: 0
     networks: [ot, ot-dmz]
 
+  # The collector, in the DMZ. Reads every device through the gateway on its
+  # own schedule and serves the readings for Prometheus. It sits on the two
+  # conduits only, never on the OT network itself.
+  collector:
+    <<: *hardening
+    image: telegraf:${TELEGRAF_VERSION:-1.40.2-alpine}
+    user: telegraf
+    command: ["telegraf", "--config", "/etc/telegraf/telegraf.conf", "--config-directory", "/etc/telegraf/telegraf.d"]
+    volumes:
+      - ./collector:/etc/telegraf:ro
+    networks: [ot-dmz, dmz-it]
+    mem_limit: 128m
+    cpus: 0.5
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the
@@ -138,6 +152,7 @@ services:
       - ./fleet:/app/fleet:ro
       - ./tests:/app/tests:ro
       - ./inventory.toml:/app/inventory.toml:ro
+      - ./collector:/app/collector:ro
     network_mode: none
     restart: "no"
 
@@ -146,6 +161,10 @@ networks:
   ot:
     internal: true
 
-  # Conduit from OT to the DMZ. Only the gateway sits on both sides of it.
+    # Conduit from OT to the DMZ: the gateway on one side, the collector on the other.
   ot-dmz:
+    internal: true
+
+  # Conduit from the DMZ to IT: the collector, and Prometheus once it arrives.
+  dmz-it:
     internal: true
