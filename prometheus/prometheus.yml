@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: lab
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The one thing Prometheus can reach outside the IT network: the collector in
+  # the DMZ. Every device reading arrives as a metric of this single target, so
+  # the scrape config never names a device, an IP in OT or a Modbus port.
+  - job_name: collector
+    scrape_interval: 10s  # Telegraf reads the devices every 10 s, faster would only repeat values
+    static_configs:
+      - targets: ["collector:9273"]

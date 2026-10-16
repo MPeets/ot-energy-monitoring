@@ -124,6 +124,26 @@ services:
     mem_limit: 128m
     cpus: 0.5
 
+  # Prometheus on the IT side. Its only way out of the IT network is the
+  # dmz-it conduit, where the collector is the only thing to talk to.
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.5.0}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-5GB}
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [dmz-it, it]
+    mem_limit: 1g
+    cpus: 1.0
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the
@@ -165,6 +185,12 @@ networks:
   ot-dmz:
     internal: true
 
-  # Conduit from the DMZ to IT: the collector, and Prometheus once it arrives.
+    # Conduit from the DMZ to IT: the collector on one side, Prometheus on the other.
   dmz-it:
     internal: true
+
+  # The IT side. Not internal, because the UIs are published to the host.
+  it: {}
+
+volumes:
+  prometheus-data:

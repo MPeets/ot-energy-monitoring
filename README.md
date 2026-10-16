@@ -9,8 +9,12 @@ generic.
 
     cp .env.example .env
     docker compose run --rm unit-tests
+    ./scripts/check.sh                  # validate configuration with the pinned tools
     docker compose up -d
+    ./scripts/check-segmentation.sh     # prove what each network can and can't reach
     docker compose run --rm ot-workstation dump wt-01
+
+- Prometheus: http://localhost:9090 (the `collector` target should be UP)
 
 ## The simulated fleet
 
@@ -31,11 +35,17 @@ changes conditions in the simulated world.
 |---|---|---|
 | `ot` | the devices, `modbus-gateway` | Field devices. Internal, no route out |
 | `ot-dmz` | `modbus-gateway`, `collector` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
-| `dmz-it` | `collector` | Conduit from the DMZ to IT. Carries the collector's metrics endpoint, nothing else |
+| `dmz-it` | `collector`, `prometheus` | Conduit from the DMZ to IT. Carries the collector's metrics endpoint, nothing else |
+| `it` | `prometheus` | The IT side, where the UIs live. The only network with ports published to the host |
+
+Three services sit on two networks: the gateway, the collector and Prometheus. None of them
+routes traffic between its networks; each only speaks its own protocol to the next zone.
+`scripts/check-segmentation.sh` tests every path from inside each network.
 
 ## Layout
 
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
+    prometheus/     Prometheus config
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
     scripts/        helper scripts
