@@ -42,3 +42,45 @@ register = "input"
 address = 3
 type = "UINT16"
 description = "Version of this register map the device implements"
+
+# Grid measurements at the device's terminals, the same on every device
+[[common]]
+name = "frequency"
+register = "input"
+address = 10
+type = "UINT16"
+scale = 0.001
+unit = "Hz"
+description = "Grid frequency"
+
+[[common]]
+name = "voltage_l1"
+register = "input"
+address = 11
+type = "FLOAT32"
+unit = "V"
+description = "Phase L1 to neutral voltage"
+
+[[common]]
+name = "voltage_l2"
+register = "input"
+address = 13
+type = "FLOAT32"
+unit = "V"
+description = "Phase L2 to neutral voltage"
+
+[[common]]
+name = "voltage_l3"
+register = "input"
+address = 15
+type = "FLOAT32"
+unit = "V"
+description = "Phase L3 to neutral voltage"
+
+[[common]]
+name = "voltage_nominal"
+register = "input"
+address = 17
+type = "FLOAT32"
+unit = "V"
+description = "Nominal phase to neutral voltage, so readers can compare in per-unit"

@@ -31,13 +31,17 @@ x-python: &python
 
 # A simulated field device. Modbus TCP listens on the standard port 502; the
 # sysctl lets a non-root process bind it without granting a capability.
+# scenarios/ is how the lab changes the physical world (see scenarios/README.md).
 x-device: &device
   <<: *python
   command: ["python", "-u", "-B", "-m", "fleet.device"]
+  volumes:
+    - ./fleet:/app/fleet:ro
+    - ./scenarios:/scenarios:ro
   sysctls:
     net.ipv4.ip_unprivileged_port_start: 0
   networks: [ot]
-
+  
 services:
   wt-01:
     <<: *device

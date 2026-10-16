@@ -15,6 +15,7 @@ generic.
 ## Layout
 
     fleet/       device simulator, register map, Modbus TCP code (standard library only)
+    scenarios/   files that inject conditions into the simulated world (faults, grid events)
     tests/       unit tests
 
 ## Status

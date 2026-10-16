@@ -4,3 +4,4 @@ vendor/
 *.tar
 *.tar.gz
 __pycache__/
+scenarios/*.json
