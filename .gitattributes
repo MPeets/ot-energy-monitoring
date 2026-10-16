@@ -1,0 +1,9 @@
+# Scripts and configs must keep LF line endings, even when committed from
+# Windows. A CRLF shell script fails on the Linux host it gets installed on.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.example text eol=lf

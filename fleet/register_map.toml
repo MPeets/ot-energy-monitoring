@@ -1,0 +1,44 @@
+# Register maps of the simulated devices: what a vendor's Modbus documentation
+# would tell you. The simulators encode their values from this file, which
+# makes it the contract between the devices and anything that reads them.
+#
+#   value in the given unit = raw register value x scale
+#
+# Registers are 16 bits. Wider values span consecutive registers, high word
+# first (big-endian, Telegraf byte_order "ABCD"). Word order is the classic
+# Modbus trap: vendors disagree on it, so it's always stated in the map.
+#
+# Input registers (function 04) hold measurements. Holding registers
+# (function 03) hold setpoints.
+
+version = 1
+
+# Value of the device_type register for each kind of device
+[device_types]
+turbine = 1
+inverter = 2
+battery = 3
+substation = 4
+
+# Identity block, the same on every device
+[[common]]
+name = "heartbeat"
+register = "input"
+address = 0
+type = "UINT32"
+unit = "s"
+description = "Seconds since the device controller started. Stops changing if the controller hangs."
+
+[[common]]
+name = "device_type"
+register = "input"
+address = 2
+type = "UINT16"
+description = "Kind of device, see [device_types]"
+
+[[common]]
+name = "map_version"
+register = "input"
+address = 3
+type = "UINT16"
+description = "Version of this register map the device implements"

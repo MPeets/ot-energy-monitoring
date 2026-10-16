@@ -1,0 +1,72 @@
+name: power-fleet
+
+# Applied to every service: read-only root filesystem (with a small in-memory
+# /tmp), no privilege escalation, no Linux capabilities and bounded log files.
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# The repo's Python code runs on the stock image, mounted read-only. Nothing to
+# build, and no packages to download: it's all standard library.
+x-python: &python
+  <<: *hardening
+  image: python:${PYTHON_VERSION:-3.12.11-alpine3.22}
+  user: "65534:65534"
+  init: true
+  working_dir: /app
+  volumes:
+    - ./fleet:/app/fleet:ro
+  mem_limit: 64m
+  cpus: 0.25
+
+# A simulated field device. Modbus TCP listens on the standard port 502; the
+# sysctl lets a non-root process bind it without granting a capability.
+x-device: &device
+  <<: *python
+  command: ["python", "-u", "-B", "-m", "fleet.device"]
+  sysctls:
+    net.ipv4.ip_unprivileged_port_start: 0
+  networks: [ot]
+
+services:
+  wt-01:
+    <<: *device
+    environment:
+      DEVICE_TYPE: turbine
+      DEVICE_ID: wt-01
+
+  # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
+
+  # A laptop plugged into the OT network, for reading devices by hand
+  ot-workstation:
+    <<: *python
+    profiles: [tools]
+    entrypoint: ["python", "-u", "-B", "-m", "fleet.cli"]
+    networks: [ot]
+    restart: "no"
+
+  # Unit tests, run with no network at all
+  unit-tests:
+    <<: *python
+    profiles: [tools]
+    command: ["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-v"]
+    volumes:
+      - ./fleet:/app/fleet:ro
+      - ./tests:/app/tests:ro
+    network_mode: none
+    restart: "no"
+
+networks:
+  # Field devices. internal: true means no route out of this network at all.
+  ot:
+    internal: true
