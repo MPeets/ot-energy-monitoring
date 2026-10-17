@@ -173,6 +173,8 @@ services:
       - ./tests:/app/tests:ro
       - ./inventory.toml:/app/inventory.toml:ro
       - ./collector:/app/collector:ro
+      - ./prometheus:/app/prometheus:ro
+      - ./docs:/app/docs:ro
     network_mode: none
     restart: "no"
 

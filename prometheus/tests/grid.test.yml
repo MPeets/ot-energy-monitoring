@@ -1,0 +1,301 @@
+# Unit tests for prometheus/rules/grid.yml. Run with:
+#   promtool test rules prometheus/tests/*.yml
+#
+# Series are sampled every 10 s, like the real collector scrape. "50x5 49.88x100"
+# means 50 Hz until 50 s, then 49.88 Hz from 60 s on, so a condition that
+# starts there goes pending at 60 s.
+rule_files:
+  - ../rules/grid.yml
+
+evaluation_interval: 10s
+
+tests:
+  # Just inside every threshold for 20 minutes: a normal grid stays quiet
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50.04x120'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50.041x120'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50.039x120'
+      - series: 'fleet_voltage_l1_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '416x120'
+      - series: 'fleet_voltage_l2_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '384x120'
+      - series: 'fleet_voltage_l3_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x120'
+      - series: 'fleet_voltage_nominal_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x120'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: GridFrequencyDeviation
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GridFrequencyCritical
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: FrequencyMeterMismatch
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PhaseVoltageOutOfTolerance
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PhaseVoltageCritical
+        exp_alerts: []
+
+  # The whole grid drops to 49.88 Hz: the 100 mHz criterion after 5 minutes,
+  # the 50 mHz one after 15. Every meter moved, so no meter is blamed.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x5 49.88x100'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50x5 49.88x100'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50x5 49.88x100'
+    alert_rule_test:
+      - eval_time: 5m50s
+        alertname: GridFrequencyDeviation
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: GridFrequencyDeviation
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              criterion: 100mHz-5m
+            exp_annotations:
+              summary: "Grid frequency 49.880 Hz, more than 100 mHz off for 5 minutes"
+              description: "Frequency has been outside 49.9 to 50.1 Hz for longer than the SOGL alert state trigger time. The grid is short of (or long on) power, and the battery's frequency response has been working the whole time."
+              runbook: docs/runbook.md#gridfrequencydeviation
+      - eval_time: 16m
+        alertname: GridFrequencyDeviation
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              criterion: 100mHz-5m
+            exp_annotations:
+              summary: "Grid frequency 49.880 Hz, more than 100 mHz off for 5 minutes"
+              description: "Frequency has been outside 49.9 to 50.1 Hz for longer than the SOGL alert state trigger time. The grid is short of (or long on) power, and the battery's frequency response has been working the whole time."
+              runbook: docs/runbook.md#gridfrequencydeviation
+          - exp_labels:
+              severity: warning
+              criterion: 50mHz-15m
+            exp_annotations:
+              summary: "Grid frequency 49.880 Hz, outside the standard range for 15 minutes"
+              description: "Frequency has been outside 49.95 to 50.05 Hz for longer than the 15 minutes the TSOs have to restore it. The grid is short of (or long on) power, and the battery's frequency response has been working the whole time."
+              runbook: docs/runbook.md#gridfrequencydeviation
+      - eval_time: 16m
+        alertname: GridFrequencyCritical
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: FrequencyMeterMismatch
+        exp_alerts: []
+
+  # 70 mHz off: never the 100 mHz criterion, the 50 mHz one after 15 minutes
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x5 50.07x100'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50x5 50.07x100'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50x5 50.07x100'
+    alert_rule_test:
+      - eval_time: 15m50s
+        alertname: GridFrequencyDeviation
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: GridFrequencyDeviation
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              criterion: 50mHz-15m
+            exp_annotations:
+              summary: "Grid frequency 50.070 Hz, outside the standard range for 15 minutes"
+              description: "Frequency has been outside 49.95 to 50.05 Hz for longer than the 15 minutes the TSOs have to restore it. The grid is short of (or long on) power, and the battery's frequency response has been working the whole time."
+              runbook: docs/runbook.md#gridfrequencydeviation
+
+  # SOGL says "continuously". 120 mHz off, but back to 80 mHz for one reading
+  # every 250 s: the 5 minute criterion never completes, the 15 minute one does
+  # because 80 mHz is still outside the standard range.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x5 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50x5 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50x5 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23 49.92 49.88x23'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: GridFrequencyDeviation
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              criterion: 50mHz-15m
+            exp_annotations:
+              summary: "Grid frequency 49.880 Hz, outside the standard range for 15 minutes"
+              description: "Frequency has been outside 49.95 to 50.05 Hz for longer than the 15 minutes the TSOs have to restore it. The grid is short of (or long on) power, and the battery's frequency response has been working the whole time."
+              runbook: docs/runbook.md#gridfrequencydeviation
+
+  # Over 50.2 Hz for a minute: critical, long before the 5 minute warning
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x5 50.25x30'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50x5 50.25x30'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50x5 50.25x30'
+    alert_rule_test:
+      - eval_time: 1m50s
+        alertname: GridFrequencyCritical
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: GridFrequencyCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Grid frequency 50.250 Hz, beyond the 200 mHz maximum steady-state deviation"
+              description: "Frequency containment reserve across Continental Europe is fully activated, so there's nothing left in it for the next disturbance. Units disconnect if frequency reaches 47.5 or 51.5 Hz."
+              runbook: docs/runbook.md#gridfrequencycritical
+      - eval_time: 2m
+        alertname: GridFrequencyDeviation
+        exp_alerts: []
+
+  # One meter reads 49.7 Hz while three read 50: the median outvotes it, so
+  # no grid alert, and the meter itself gets flagged
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x100'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '50x100'
+      - series: 'fleet_frequency_hertz{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '50x100'
+      - series: 'fleet_frequency_hertz{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '50x5 49.7x100'
+    alert_rule_test:
+      - eval_time: 5m50s
+        alertname: FrequencyMeterMismatch
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: FrequencyMeterMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: bess-01
+              device_type: battery
+              site: bess-c
+            exp_annotations:
+              summary: "bess-01 measures a different grid frequency from the rest of the fleet"
+              description: "Its reading is 300mHz away from the fleet's median, and grid frequency is the same everywhere. Anything acting on this measurement acts on a wrong number."
+              runbook: docs/runbook.md#frequencymetermismatch
+      - eval_time: 16m
+        alertname: GridFrequencyCritical
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: GridFrequencyDeviation
+        exp_alerts: []
+
+  # Two meters that disagree: no majority, so no reference and no alerts.
+  # Without the three-meter rule their average, 49.75 Hz, would page as critical.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_frequency_hertz{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '50x60'
+      - series: 'fleet_frequency_hertz{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '49.5x60'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GridFrequencyCritical
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FrequencyMeterMismatch
+        exp_alerts: []
+
+  # A sag on one phase to 0.93 pu: warning after 10 minutes, for that phase only
+  - interval: 10s
+    input_series:
+      - series: 'fleet_voltage_l1_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x80'
+      - series: 'fleet_voltage_l2_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x5 372x80'
+      - series: 'fleet_voltage_l3_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '401x80'
+      - series: 'fleet_voltage_nominal_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x80'
+    alert_rule_test:
+      - eval_time: 10m50s
+        alertname: PhaseVoltageOutOfTolerance
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: PhaseVoltageOutOfTolerance
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: wt-01
+              device_type: turbine
+              site: wind-a
+              phase: l2
+            exp_annotations:
+              summary: "L2 at wt-01 is 0.930 pu, outside ±5% for 10 minutes"
+              description: "Still inside what the equipment tolerates, but heading for the protection settings that disconnect the unit at 0.85 and 1.15 pu."
+              runbook: docs/runbook.md#phasevoltageoutoftolerance
+      - eval_time: 11m
+        alertname: PhaseVoltageCritical
+        exp_alerts: []
+
+  # A two minute dip to 0.93 pu is not sustained, so no warning
+  - interval: 10s
+    input_series:
+      - series: 'fleet_voltage_l1_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x30 372x12 400x80'
+      - series: 'fleet_voltage_nominal_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x125'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PhaseVoltageOutOfTolerance
+        exp_alerts: []
+
+  # Per-unit makes one threshold fit every voltage level: 0.88 pu at a 690 V
+  # turbine and 1.11 pu on the 110 kV side of the substation are both critical
+  - interval: 10s
+    input_series:
+      - series: 'fleet_voltage_l1_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x5 352x20'
+      - series: 'fleet_voltage_nominal_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x25'
+      - series: 'fleet_voltage_l3_volts{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '63500x5 70485x20'
+      - series: 'fleet_voltage_nominal_volts{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '63500x25'
+    alert_rule_test:
+      - eval_time: 1m50s
+        alertname: PhaseVoltageCritical
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: PhaseVoltageCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: wt-01
+              device_type: turbine
+              site: wind-a
+              phase: l1
+            exp_annotations:
+              summary: "L1 at wt-01 is 0.880 pu, outside ±10%"
+              description: "Close to or past the protection settings that disconnect the unit at 0.85 and 1.15 pu. If it has tripped, its output is zero because of the grid, not the unit."
+              runbook: docs/runbook.md#phasevoltagecritical
+          - exp_labels:
+              severity: critical
+              device: sub-01
+              device_type: substation
+              site: sub-d
+              phase: l3
+            exp_annotations:
+              summary: "L3 at sub-01 is 1.110 pu, outside ±10%"
+              description: "Close to or past the protection settings that disconnect the unit at 0.85 and 1.15 pu. If it has tripped, its output is zero because of the grid, not the unit."
+              runbook: docs/runbook.md#phasevoltagecritical

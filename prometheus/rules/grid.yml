@@ -1,0 +1,119 @@
+# The grid at the fleet's terminals: frequency and per-phase voltage.
+#
+# The grid isn't ours to fix, so these alerts are about knowing what the fleet
+# is reacting to, and catching the measurements that would make it react wrong.
+#
+# The Baltic grids have run synchronously with Continental Europe since
+# February 2025, so the frequency thresholds are the Continental European
+# parameters of the EU System Operation Guideline (SOGL, Regulation 2017/1485):
+# a 50 mHz standard frequency range, 200 mHz maximum steady-state deviation,
+# 5 minute alert state trigger time and 15 minutes to restore frequency.
+#
+# Readings arrive every 10 s, so everything here is steady-state. The
+# sub-second dip right after a big trip belongs to PMUs and protection relay
+# records, not to a SCADA poll.
+groups:
+  # One group, recording rules first, for the same reason as in comms.yml
+  - name: grid
+    rules:
+      # Frequency is one value for the whole synchronous area, so every meter in
+      # the fleet should read the same. The median outvotes a bad one. With
+      # fewer than three meters there's no majority, so there's no value either.
+      - record: fleet:frequency_hertz:median
+        expr: quantile(0.5, fleet_frequency_hertz) and on () count(fleet_frequency_hertz) >= 3
+
+      # Phase voltages in per-unit of each device's own nominal, so one set of
+      # thresholds works at 630 V, 690 V and 110 kV
+      - record: device:phase_voltage:per_unit
+        expr: |
+          (
+              label_replace(fleet_voltage_l1_volts, "phase", "l1", "", "")
+            or
+              label_replace(fleet_voltage_l2_volts, "phase", "l2", "", "")
+            or
+              label_replace(fleet_voltage_l3_volts, "phase", "l3", "", "")
+          )
+          / ignoring (phase) group_left
+          fleet_voltage_nominal_volts
+
+      # SOGL has two frequency criteria for the alert state, so this alert has
+      # two rules. The criterion label says which one tripped.
+      - alert: GridFrequencyDeviation
+        expr: fleet:frequency_hertz:median > 50.1 or fleet:frequency_hertz:median < 49.9
+        for: 5m
+        labels:
+          severity: warning
+          criterion: 100mHz-5m
+        annotations:
+          summary: 'Grid frequency {{ printf "%.3f" $value }} Hz, more than 100 mHz off for 5 minutes'
+          description: >-
+            Frequency has been outside 49.9 to 50.1 Hz for longer than the SOGL alert state
+            trigger time. The grid is short of (or long on) power, and the battery's frequency
+            response has been working the whole time.
+          runbook: docs/runbook.md#gridfrequencydeviation
+
+      - alert: GridFrequencyDeviation
+        expr: fleet:frequency_hertz:median > 50.05 or fleet:frequency_hertz:median < 49.95
+        for: 15m
+        labels:
+          severity: warning
+          criterion: 50mHz-15m
+        annotations:
+          summary: 'Grid frequency {{ printf "%.3f" $value }} Hz, outside the standard range for 15 minutes'
+          description: >-
+            Frequency has been outside 49.95 to 50.05 Hz for longer than the 15 minutes the TSOs
+            have to restore it. The grid is short of (or long on) power, and the battery's
+            frequency response has been working the whole time.
+          runbook: docs/runbook.md#gridfrequencydeviation
+
+      - alert: GridFrequencyCritical
+        expr: fleet:frequency_hertz:median > 50.2 or fleet:frequency_hertz:median < 49.8
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Grid frequency {{ printf "%.3f" $value }} Hz, beyond the 200 mHz maximum steady-state deviation'
+          description: >-
+            Frequency containment reserve across Continental Europe is fully activated, so
+            there's nothing left in it for the next disturbance. Units disconnect if frequency
+            reaches 47.5 or 51.5 Hz.
+          runbook: docs/runbook.md#gridfrequencycritical
+
+      - alert: FrequencyMeterMismatch
+        # One device disagreeing with the rest is a bad meter, not a grid event.
+        # 20 mHz is twice the measurement accuracy FCR providers have to meet.
+        expr: abs(fleet_frequency_hertz - on () group_left fleet:frequency_hertz:median) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} measures a different grid frequency from the rest of the fleet"
+          description: >-
+            Its reading is {{ $value | humanize }}Hz away from the fleet's median, and grid
+            frequency is the same everywhere. Anything acting on this measurement acts on a
+            wrong number.
+          runbook: docs/runbook.md#frequencymetermismatch
+
+      - alert: PhaseVoltageOutOfTolerance
+        expr: device:phase_voltage:per_unit > 1.05 or device:phase_voltage:per_unit < 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.phase | toUpper }} at {{ $labels.device }} is {{ printf "%.3f" $value }} pu, outside ±5% for 10 minutes'
+          description: >-
+            Still inside what the equipment tolerates, but heading for the protection settings
+            that disconnect the unit at 0.85 and 1.15 pu.
+          runbook: docs/runbook.md#phasevoltageoutoftolerance
+
+      - alert: PhaseVoltageCritical
+        expr: device:phase_voltage:per_unit > 1.10 or device:phase_voltage:per_unit < 0.90
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.phase | toUpper }} at {{ $labels.device }} is {{ printf "%.3f" $value }} pu, outside ±10%'
+          description: >-
+            Close to or past the protection settings that disconnect the unit at 0.85 and
+            1.15 pu. If it has tripped, its output is zero because of the grid, not the unit.
+          runbook: docs/runbook.md#phasevoltagecritical

@@ -44,6 +44,11 @@ routes traffic between its networks; each only speaks its own protocol to the ne
 
 ## Alerts
 
+Every alert has unit tests (`prometheus/tests/`), including cases that must not fire, and a
+section in [docs/runbook.md](docs/runbook.md).
+
+### Communications
+
 | Alert | Severity | Means |
 |---|---|---|
 | CollectorDown | critical | Prometheus can't scrape the collector: no data from anywhere |
@@ -56,8 +61,25 @@ routes traffic between its networks; each only speaks its own protocol to the ne
 
 "No data" and "no output" are kept apart on purpose: none of the alerts above look at power, so
 a calm day or a curtailed park can't trip them, and a silent site never looks like a site making
-0 MW. Every alert has unit tests (`prometheus/tests/`), including cases that must not fire, and
-a section in [docs/runbook.md](docs/runbook.md).
+0 MW.
+
+### Grid
+
+| Alert | Severity | Means |
+|---|---|---|
+| GridFrequencyDeviation | warning | More than 100 mHz off 50 Hz for 5 minutes, or outside ±50 mHz for 15 |
+| GridFrequencyCritical | critical | More than 200 mHz off for a minute: all frequency containment reserve is in use |
+| FrequencyMeterMismatch | warning | One device's frequency disagrees with the rest: a bad meter, not the grid |
+| PhaseVoltageOutOfTolerance | warning | A phase more than 5% off nominal for 10 minutes |
+| PhaseVoltageCritical | critical | A phase more than 10% off for a minute, close to the protection settings |
+
+The Baltic grids have run synchronously with Continental Europe since February 2025, so the
+frequency thresholds are Continental Europe's parameters from the EU System Operation Guideline
+(SOGL): the two warning conditions are its alert state, beyond 200 mHz its emergency state.
+Frequency is one value across the synchronous area, so the grid alerts use the median of every
+meter in the fleet and need at least three. One bad meter can't page anyone, it gets an alert of
+its own instead. Voltages are compared in per-unit of each device's nominal, so the same
+thresholds work at 690 V and at 110 kV.
 
 ## Layout
 

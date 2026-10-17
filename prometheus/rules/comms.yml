@@ -6,7 +6,11 @@
 # None of the rules here look at power, so a calm day or a curtailed park can
 # never trip them.
 groups:
-  - name: comms-recording
+  # One group, recording rules first. Rules in a group run in order with the
+  # same timestamp, so the alerts always see this evaluation's values. In
+  # separate groups they'd see them one interval late or not, depending on
+  # which group happened to run first.
+  - name: comms
     rules:
       # 1 if the collector got data from the device in the last minute, else 0.
       # Built on Telegraf's per-device gather counter, which exists for every
@@ -19,8 +23,6 @@ groups:
       - record: site:devices_reachable:ratio
         expr: avg by (site) (device:reachable:bool)
 
-  - name: comms
-    rules:
       - alert: Watchdog
         expr: vector(1)
         labels:
