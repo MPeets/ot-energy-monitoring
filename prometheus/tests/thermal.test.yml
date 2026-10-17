@@ -1,0 +1,219 @@
+# Unit tests for prometheus/rules/thermal.yml. Run with:
+#   promtool test rules prometheus/tests/*.yml
+#
+# Series are sampled every 10 s, like the real collector scrape. Expected oil
+# rise at a given load, from the model in the rules: 29.1 K at 60% load,
+# 40.9 K at 80%, 12.2 K at 10%, 71.1 K at 120%.
+rule_files:
+  - ../rules/thermal.yml
+
+evaluation_interval: 10s
+
+tests:
+  # Normal heat. None of it fires.
+  - interval: 10s
+    input_series:
+      # sub-01: 80% load on a 20 °C day, oil exactly where the model puts it
+      - series: 'fleet_oil_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '60.94x125'
+      - series: 'fleet_ambient_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '20x125'
+      - series: 'fleet_transformer_load_ratio{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '0.8x125'
+      # bess-01: full-power charging with working cooling. Cells climb fast at
+      # first, then level off under 35 °C as the HVAC catches up.
+      - series: 'fleet_cell_temperature_celsius{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '20+0.316x30 29.48+0.1163x30 32.97+0.0427x30 34.25+0.016x30'
+      - series: 'fleet_active_power_watts{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '-5000000x125'
+      # bess-02: warm and charging, but cooling down
+      - series: 'fleet_cell_temperature_celsius{device="bess-02", device_type="battery", site="bess-c"}'
+        values: '40-0.0333x125'
+      - series: 'fleet_active_power_watts{device="bess-02", device_type="battery", site="bess-c"}'
+        values: '-3000000x125'
+      # bess-03: warm and climbing, but discharging
+      - series: 'fleet_cell_temperature_celsius{device="bess-03", device_type="battery", site="bess-c"}'
+        values: '36+0.1x60 42x65'
+      - series: 'fleet_active_power_watts{device="bess-03", device_type="battery", site="bess-c"}'
+        values: '3000000x125'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: BatteryHeatingWhileCharging
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: BatteryHeatingWhileCharging
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BatteryHeatingWhileCharging
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BatteryCellTemperatureHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: TransformerOilHot
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: TransformerCoolingDegraded
+        exp_alerts: []
+
+  # Oil at 90 °C: the warning after 5 minutes
+  - interval: 10s
+    input_series:
+      - series: 'fleet_oil_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '80x5 90x60'
+    alert_rule_test:
+      - eval_time: 5m50s
+        alertname: TransformerOilHot
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: TransformerOilHot
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: sub-01
+              device_type: substation
+              site: sub-d
+            exp_annotations:
+              summary: "Transformer top oil at sub-01 is 90 °C"
+              description: "Above the 85 °C alarm setting for 5 minutes. Insulation ages faster the hotter it runs, so this is the time to look at load and cooling, before the critical alarm and the transformer's own trip."
+              runbook: docs/runbook.md#transformeroilhot
+      - eval_time: 6m
+        alertname: TransformerOilCritical
+        exp_alerts: []
+
+  # Oil at 97 °C: critical after a minute
+  - interval: 10s
+    input_series:
+      - series: 'fleet_oil_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '80x5 97x20'
+    alert_rule_test:
+      - eval_time: 1m50s
+        alertname: TransformerOilCritical
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TransformerOilCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: sub-01
+              device_type: substation
+              site: sub-d
+            exp_annotations:
+              summary: "Transformer top oil at sub-01 is 97 °C"
+              description: "Close to where the transformer's own temperature protection trips it, and every site exporting through it would go too. Taking load off now, by curtailing the parks behind it, costs less than losing the whole export path."
+              runbook: docs/runbook.md#transformeroilcritical
+
+  # A winter night, fans failed at 1 minute. At 60% load the oil should sit
+  # 29 K above the -10 °C air; it sits 58 K above. 48 °C is nowhere near an
+  # alarm setting, but the cooling has gone.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_oil_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '19.11x5 48.22x115'
+      - series: 'fleet_ambient_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '-10x120'
+      - series: 'fleet_transformer_load_ratio{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '0.6x120'
+    alert_rule_test:
+      - eval_time: 15m50s
+        alertname: TransformerCoolingDegraded
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: TransformerCoolingDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: sub-01
+              device_type: substation
+              site: sub-d
+            exp_annotations:
+              summary: "Transformer oil at sub-01 is running 29 K hotter than its load explains"
+              description: "Its rise above the outdoor air is well past what even its highest load of the last 30 minutes accounts for, so the cooling isn't taking the heat away: fans, pumps or radiators. In winter this shows long before the temperature itself gets high."
+              runbook: docs/runbook.md#transformercoolingdegraded
+      - eval_time: 16m
+        alertname: TransformerOilHot
+        exp_alerts: []
+
+  # After 40 minutes at 120% the load drops to 10%. The oil takes its time
+  # cooling, which is physics, not a cooling fault. Judged against the current
+  # load instead of the highest recent one, this would fire at about 55m.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_oil_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '81.05x240 81.05-0.7727x30 57.87-0.4683x30 43.82-0.2843x30 35.29-0.1723x30 30.12-0.1047x30 26.98-0.0633x30 25.08-0.0383x30 23.93-0.0233x30'
+      - series: 'fleet_ambient_temperature_celsius{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '10x500'
+      - series: 'fleet_transformer_load_ratio{device="sub-01", device_type="substation", site="sub-d"}'
+        values: '1.2x240 0.1x260'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: TransformerCoolingDegraded
+        exp_alerts: []
+      - eval_time: 56m
+        alertname: TransformerCoolingDegraded
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: TransformerCoolingDegraded
+        exp_alerts: []
+
+  # Battery cooling fails while charging at full power: 3 °C a minute from
+  # 1 minute on. The critical alert comes well before the BMS trip at 55 °C.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_cell_temperature_celsius{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '30x5 30+0.5x60'
+      - series: 'fleet_active_power_watts{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '-5000000x66'
+    alert_rule_test:
+      - eval_time: 4m40s
+        alertname: BatteryHeatingWhileCharging
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: BatteryHeatingWhileCharging
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: bess-01
+              device_type: battery
+              site: bess-c
+            exp_annotations:
+              summary: "bess-01 cells at 42 °C and climbing while charging"
+              description: "Rising faster than 0.5 °C a minute while the battery charges. Stop the charging now rather than wait for the battery management system to trip at 55 °C."
+              runbook: docs/runbook.md#batteryheatingwhilecharging
+      - eval_time: 5m
+        alertname: BatteryCellTemperatureHigh
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: BatteryCellTemperatureHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: bess-01
+              device_type: battery
+              site: bess-c
+            exp_annotations:
+              summary: "bess-01 cells at 51 °C"
+              description: "Above 45 °C, the top of the charging range lithium cells are commonly specified for, and 10 °C short of the battery management system's 55 °C trip."
+              runbook: docs/runbook.md#batterycelltemperaturehigh
+
+  # The BMS trips at 1 minute
+  - interval: 10s
+    input_series:
+      - series: 'fleet_state{device="bess-01", device_type="battery", site="bess-c"}'
+        values: '1x5 5x30'
+    alert_rule_test:
+      - eval_time: 2m50s
+        alertname: BatteryFault
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: BatteryFault
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: bess-01
+              device_type: battery
+              site: bess-c
+            exp_annotations:
+              summary: "bess-01 has tripped: no charging, no discharging, no frequency response"
+              description: "The battery reports a fault: a battery management system trip, its grid protection or a fault of its own. If the cells are hot it's the BMS, which allows a restart only once they're below 40 °C. Either way the frequency reserve it was sold for isn't there."
+              runbook: docs/runbook.md#batteryfault

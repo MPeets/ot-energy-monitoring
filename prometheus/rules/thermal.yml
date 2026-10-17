@@ -1,0 +1,115 @@
+# Heat: the substation transformer's oil and the battery's cells.
+#
+# Protection trips at its limit either way: the transformer's own temperature
+# protection, the battery management system at 55 C. These alerts are there so
+# someone can take load off before that, which means watching the trend and
+# the cause, not only the number.
+#
+# The thresholds are generic lab settings. Real ones come from the
+# transformer's manufacturer and heat-run test, the cells' datasheet, and the
+# owner's loading policy.
+groups:
+  # One group, recording rules first, for the same reason as in comms.yml
+  - name: thermal
+    rules:
+      # How far the top oil sits above the outdoor air
+      - record: device:top_oil_rise_kelvin
+        expr: fleet_oil_temperature_celsius - fleet_ambient_temperature_celsius
+
+      # How far it should sit, from the oil thermal model in IEC 60076-7:
+      # rated rise x ((1 + R K^2) / (1 + R))^x at load K, with a rated top-oil
+      # rise of 55 K, a loss ratio R of 6 and an oil exponent x of 0.8. The same
+      # model as fleet/models/substation.py. For a real transformer the numbers
+      # come from its heat-run test report.
+      #
+      # Oil takes a while to catch up with the load, so this uses the highest
+      # load of the last 30 minutes, about three oil time constants in the lab
+      # (most of a day for a real transformer). Right after the load drops the
+      # oil is still hot from it, and that's no reason to alert.
+      - record: device:top_oil_rise_kelvin:expected
+        expr: 55 * ((1 + 6 * max_over_time(fleet_transformer_load_ratio[30m]) ^ 2) / 7) ^ 0.8
+
+      - alert: TransformerOilHot
+        expr: fleet_oil_temperature_celsius > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Transformer top oil at {{ $labels.device }} is {{ printf "%.0f" $value }} °C'
+          description: >-
+            Above the 85 °C alarm setting for 5 minutes. Insulation ages faster the hotter it
+            runs, so this is the time to look at load and cooling, before the critical alarm
+            and the transformer's own trip.
+          runbook: docs/runbook.md#transformeroilhot
+
+      - alert: TransformerOilCritical
+        expr: fleet_oil_temperature_celsius > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Transformer top oil at {{ $labels.device }} is {{ printf "%.0f" $value }} °C'
+          description: >-
+            Close to where the transformer's own temperature protection trips it, and every
+            site exporting through it would go too. Taking load off now, by curtailing the
+            parks behind it, costs less than losing the whole export path.
+          runbook: docs/runbook.md#transformeroilcritical
+
+      - alert: TransformerCoolingDegraded
+        expr: device:top_oil_rise_kelvin - device:top_oil_rise_kelvin:expected > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Transformer oil at {{ $labels.device }} is running {{ printf "%.0f" $value }} K hotter than its load explains'
+          description: >-
+            Its rise above the outdoor air is well past what even its highest load of the last
+            30 minutes accounts for, so the cooling isn't taking the heat away: fans, pumps or
+            radiators. In winter this shows long before the temperature itself gets high.
+          runbook: docs/runbook.md#transformercoolingdegraded
+
+      - alert: BatteryCellTemperatureHigh
+        expr: fleet_cell_temperature_celsius > 45
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.device }} cells at {{ printf "%.0f" $value }} °C'
+          description: >-
+            Above 45 °C, the top of the charging range lithium cells are commonly specified
+            for, and 10 °C short of the battery management system's 55 °C trip.
+          runbook: docs/runbook.md#batterycelltemperaturehigh
+
+      - alert: BatteryHeatingWhileCharging
+        # Charging puts more heat into cells that are already warm. With working
+        # cooling they level off as the HVAC catches up, so above 35 C and still
+        # climbing means the heat isn't going anywhere.
+        expr: |
+          fleet_cell_temperature_celsius > 35
+          and on (device) deriv(fleet_cell_temperature_celsius[5m]) * 60 > 0.5
+          and on (device) fleet_active_power_watts{device_type="battery"} < 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.device }} cells at {{ printf "%.0f" $value }} °C and climbing while charging'
+          description: >-
+            Rising faster than 0.5 °C a minute while the battery charges. Stop the charging
+            now rather than wait for the battery management system to trip at 55 °C.
+          runbook: docs/runbook.md#batteryheatingwhilecharging
+
+      # Where the story above ends if nobody acts. In the lab that's mostly the
+      # BMS on temperature, but grid protection and the battery's own faults
+      # report the same state.
+      - alert: BatteryFault
+        expr: fleet_state{device_type="battery"} == 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} has tripped: no charging, no discharging, no frequency response"
+          description: >-
+            The battery reports a fault: a battery management system trip, its grid protection
+            or a fault of its own. If the cells are hot it's the BMS, which allows a restart only
+            once they're below 40 °C. Either way the frequency reserve it was sold for isn't there.
+          runbook: docs/runbook.md#batteryfault

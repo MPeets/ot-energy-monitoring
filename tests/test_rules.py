@@ -1,15 +1,15 @@
 """The alert rules against the rest of the lab. Every device metric the rules
 and the runbook name has to be one the collector produces: an alert on a
 metric nobody collects doesn't error, it just never fires, so a renamed
-register would quietly switch an alert off. And the expected-power maths and
-fault names have to match the simulated devices."""
+register would quietly switch an alert off. And the models, limits and names
+the rules rely on have to match the simulated devices and the register map."""
 import re
 import unittest
 from pathlib import Path
 
 from fleet.collector_config import MEASUREMENT, OMITTED, field_name
 from fleet.inventory import load_inventory
-from fleet.models import inverter, turbine
+from fleet.models import battery, inverter, substation, turbine
 from fleet.registers import load_map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,6 +62,25 @@ class RulesTest(unittest.TestCase):
                 with self.subTest(code=code):
                     expected = f"{{{{ if eq $value {code}.0 }}}}{name}"
                     self.assertTrue(expected in rules, f"generation.yml doesn't name code {code} as {name!r}")
+
+    def test_register_map_mismatch_expects_the_current_map_version(self):
+        rules = (RULES / "comms.yml").read_text(encoding="utf-8")
+        version = load_map("turbine").version
+        for expected in (f"fleet_map_version != {version}", f"the collector expects v{version}"):
+            with self.subTest(expected=expected):
+                self.assertTrue(expected in rules, f"comms.yml doesn't contain {expected!r}, bump it with the map")
+
+    def test_oil_model_and_bms_trip_match_the_devices(self):
+        rules = (RULES / "thermal.yml").read_text(encoding="utf-8")
+        window = f"{3 * substation.OIL_TIME_CONSTANT_S // 60}m"  # about three oil time constants
+        oil_model = (
+            f"{substation.RATED_TOP_OIL_RISE_K:g} * ((1 + {substation.LOSS_RATIO:g} * "
+            f"max_over_time(fleet_transformer_load_ratio[{window}]) ^ 2) / {1 + substation.LOSS_RATIO:g}) "
+            f"^ {substation.OIL_EXPONENT:g}"
+        )
+        for expected in (oil_model, f"trip at {battery.BMS_TRIP_C:g} °C", f"{battery.BMS_TRIP_C:g} °C trip"):
+            with self.subTest(expected=expected):
+                self.assertTrue(expected in rules, f"thermal.yml doesn't contain {expected!r}")
 
 
 if __name__ == "__main__":

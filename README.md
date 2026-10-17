@@ -98,6 +98,23 @@ make at least a tenth of their rating, so a calm night, a storm stop or dusk is 
 underperformance. The tests cover each of those cases, and a contract test keeps the rules on the
 same power curve and performance ratio as the simulated devices.
 
+### Thermal
+
+| Alert | Severity | Means |
+|---|---|---|
+| TransformerOilHot | warning | Top oil above 85 °C for 5 minutes |
+| TransformerOilCritical | critical | Top oil above 95 °C: close to the transformer's own trip, and the whole export path with it |
+| TransformerCoolingDegraded | warning | Oil more than 10 K hotter than its load explains: the cooling has failed, whatever the temperature |
+| BatteryCellTemperatureHigh | warning | Cells above 45 °C |
+| BatteryHeatingWhileCharging | critical | Cells above 35 °C and still climbing while charging: stop charging before the BMS trips |
+| BatteryFault | warning | The battery has tripped, and its frequency reserve with it |
+
+Protection trips at its limit either way, so the thermal alerts look for the cause before the
+number gets there. The transformer's expected oil rise comes from the IEC 60076-7 thermal model at
+its highest recent load, so failed fans show up on a winter night with the oil at 50 °C, long
+before any alarm setting would. The battery alert watches the trend: cells that keep climbing
+while charging, where working cooling would have levelled them off.
+
 ## Layout
 
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory

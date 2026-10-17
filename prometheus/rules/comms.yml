@@ -98,14 +98,15 @@ groups:
           runbook: docs/runbook.md#devicedatafrozen
 
       - alert: RegisterMapMismatch
-        # The collector config is generated for register map v1. A device on any
+        # The collector config is generated for register map v2. A device on any
         # other version (a firmware update, a replaced unit) may have moved
         # registers, and its numbers would be decoded wrong without looking wrong.
-        expr: fleet_map_version != 1
+        # A unit test keeps this version in step with fleet/register_map.toml.
+        expr: fleet_map_version != 2
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.device }} reports register map v{{ $value }}, the collector expects v1"
+          summary: "{{ $labels.device }} reports register map v{{ $value }}, the collector expects v2"
           description: "Readings from {{ $labels.device }} can't be trusted until the collector config is regenerated for its map."
           runbook: docs/runbook.md#registermapmismatch

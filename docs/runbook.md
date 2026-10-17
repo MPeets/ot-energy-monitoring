@@ -19,6 +19,10 @@ curtailment and clipping all look like low output. A unit only counts as underpe
 what its weather and its power limit allow right now, and a stopped unit is a fault only when the
 cause is inside it.
 
+The rule for every thermal alert: **act on the trend, not the trip.** Protection trips at its
+limit whether anyone is watching or not. The alerts are there so someone can take load off first,
+and the earliest sign is usually heat the load doesn't explain.
+
 ---
 
 ## CollectorDown
@@ -183,9 +187,10 @@ filter them out.
 
 **Check first**
 1. Is the battery responding? Its frequency response is proportional and full at 200 mHz, so at
-   100 mHz `bess-01` should be about 500 kW off its schedule: discharging more when frequency is
-   low, charging more when it's high. Check `fleet_active_power_watts{device="bess-01"}`. A
-   battery sitting exactly on its schedule during a deviation isn't delivering the reserve it's
+   100 mHz `bess-01` should be about 500 kW off its setpoint: discharging more when frequency is
+   low, charging more when it's high. The gap is
+   `fleet_active_power_watts{device="bess-01"} - fleet_power_setpoint_watts{device="bess-01"}`.
+   A battery sitting exactly on its setpoint during a deviation isn't delivering the reserve it's
    paid for.
 2. Its state of charge, `fleet_soc_ratio{device="bess-01"}`. A long low-frequency event drains
    it, a long high one fills it.
@@ -216,8 +221,9 @@ under SOGL. It's rare and it's big: a system split, or several gigawatts lost at
 **Check first**
 1. Is it real? Look at `fleet_frequency_hertz` per device: every site should show the same step
    at the same moment.
-2. The battery at full response: `fleet_active_power_watts{device="bess-01"}` should be its whole
-   1 MW reserve off schedule. Keep an eye on `fleet_soc_ratio{device="bess-01"}`.
+2. The battery at full response: the gap between `fleet_active_power_watts{device="bess-01"}`
+   and `fleet_power_setpoint_watts{device="bess-01"}` should be its whole 1 MW reserve. Keep an
+   eye on `fleet_soc_ratio{device="bess-01"}`.
 3. What's still connected. Units disconnect at 47.5 or 51.5 Hz and then report state 5
    (`fleet_state == 5`). Inverters also say why: fault code 103 is grid frequency
    (`fleet_fault_code == 103`).
@@ -244,8 +250,9 @@ it discharging a quarter of its reserve into a grid that didn't ask for it. 20 m
 **Check first**
 1. `fleet_frequency_hertz` for this device next to the others. A steady offset points at the
    meter's calibration, a reading that jumps around at the voltage measurement it's derived from.
-2. If it's the battery, compare its output with its schedule. Frequency response on a wrong
-   reading shows as a steady offset while nothing is happening on the grid.
+2. If it's the battery, look at the gap between its output and its setpoint
+   (`fleet_active_power_watts - fleet_power_setpoint_watts`). Frequency response on a wrong
+   reading shows as a steady gap while nothing is happening on the grid.
 3. Was the device replaced, re-flashed or reconfigured recently?
 
 **Likely causes:** meter calibration drift, a faulty voltage transformer or its wiring, a firmware
@@ -462,3 +469,156 @@ in range.
 range.
 
 **Escalate:** if it keeps happening, to the grid operator, with the times of each trip.
+
+---
+
+## TransformerOilHot
+
+**Severity:** warning. **Fires when:** the transformer's top-oil temperature has been above 85 °C
+for 5 minutes.
+
+**What it means:** the transformer is running hot. Insulation ages faster the hotter it runs (the
+usual rule of thumb is twice as fast for every 6 °C or so at the hottest spot), so hours up here
+cost transformer life even if nothing trips.
+
+**Check first**
+1. Load or cooling? Compare `device:top_oil_rise_kelvin{device="sub-01"}` with
+   `device:top_oil_rise_kelvin:expected{device="sub-01"}`. Close together means it's the load and
+   the weather. The actual rise well above the expected one means the cooling, and
+   `TransformerCoolingDegraded` will follow.
+2. The load, `fleet_transformer_load_ratio{device="sub-01"}`. Above 1.0 it's carrying more than
+   its rating.
+3. The weather, `fleet_ambient_temperature_celsius{device="sub-01"}`. A heatwave takes margin off
+   everything.
+
+**Likely causes:** high export on a hot day, an overload, failing cooling.
+
+**Fix:** take load off by curtailing the parks behind it, and fix the cooling if that's the cause.
+Curtailment goes through the park controller on the OT side. This monitoring stack can't write a
+setpoint, by design. In the lab, from the OT side:
+`docker compose run --rm ot-workstation write wt-01 power_limit 50`.
+
+**Escalate:** to the substation's maintenance contractor if it's the cooling, and to whoever
+schedules the fleet if export has to be held down.
+
+---
+
+## TransformerOilCritical
+
+**Severity:** critical. **Fires when:** top oil has been above 95 °C for a minute.
+
+**What it means:** it's close to where the transformer's own temperature protection trips it. If
+it trips, every site exporting through it drops off at once: the whole fleet's output gone in one
+step, and an imbalance nobody planned for.
+
+**Check first:** the same as `TransformerOilHot`, but don't spend long on it. Taking load off comes
+first.
+
+**Fix:** curtail the parks behind it now, through the park controller (in the lab,
+`write <device> power_limit <percent>` from the OT workstation). Bringing output back up costs a
+little energy. A tripped transformer costs all of it, and maybe the transformer.
+
+**Escalate:** at once, to the duty manager and the substation's owner.
+
+---
+
+## TransformerCoolingDegraded
+
+**Severity:** warning. **Fires when:** for 15 minutes, the top oil has sat more than 10 K further
+above the outdoor air than the thermal model says its highest load of the last 30 minutes
+explains.
+
+**What it means:** heat is going in but not coming out. Fans, oil pumps or radiators aren't doing
+their job. It's the earliest warning there is: on a winter night the oil can sit at 50 °C with the
+cooling dead, nowhere near an alarm setting, and it'd only show in the absolute temperature on the
+first warm day with a strong wind.
+
+**Check first**
+1. `device:top_oil_rise_kelvin{device="sub-01"}` against
+   `device:top_oil_rise_kelvin:expected{device="sub-01"}`: how far apart, and since when? A step
+   means something stopped, like a fan supply or a pump. A slow drift over weeks means radiators
+   clogging or the oil ageing.
+2. The ambient reading itself. An outdoor sensor that has failed low, or sits in the sun or next
+   to a radiator, fakes this alert.
+3. The cooling's own alarms: fan and pump supplies, in the substation's SCADA.
+
+**Likely causes:** a tripped fan or pump supply, failed fan motors, radiators blocked with dirt or
+leaves, an ambient sensor reading wrong.
+
+**Fix:** restore the cooling. Until it's back, the transformer's real rating is lower, so plan the
+export with that in mind. In the lab, delete `scenarios/sub-01.json`.
+
+**Escalate:** to the substation's maintenance contractor.
+
+---
+
+## BatteryCellTemperatureHigh
+
+**Severity:** warning. **Fires when:** the hottest cell has been above 45 °C for a minute.
+
+**What it means:** the cells are past the top of the range lithium cells are commonly specified to
+charge in (one LFP datasheet: 0 to 45 °C charging, -20 to 60 °C discharging), and 10 °C short of
+the battery management system's 55 °C trip. Heat ages cells too, so even a battery that never
+trips pays for running hot.
+
+**Check first**
+1. Is it charging? Then `BatteryHeatingWhileCharging` is probably firing as well, and it's the
+   one to work on.
+2. The HVAC. In reality, the container's own HVAC alarms. In the lab, `cooling_failure` in its
+   scenario.
+3. Its power, `fleet_active_power_watts{device="bess-01"}`. Heat comes from current, so full
+   power in a heatwave runs hot even with working cooling.
+
+**Fix:** reduce the power and fix the cooling.
+
+**Escalate:** to the battery's maintenance contractor if the HVAC has failed.
+
+---
+
+## BatteryHeatingWhileCharging
+
+**Severity:** critical. **Fires when:** for 2 minutes, the cells have been above 35 °C, climbing
+faster than 0.5 °C a minute, while the battery is charging.
+
+**What it means:** with working cooling, cells warm up when current starts flowing and then level
+off. These aren't levelling off, and charging keeps pushing energy and heat into cells that are
+already warm. Heat is where thermal runaway starts. In the lab, a cooling failure at full charging
+power gets from this alert to the BMS trip in about five minutes. A real container is slower, but
+the order is the same.
+
+**Check first:** nothing that delays the fix. Stop the charging, then look.
+
+**Fix**
+1. Stop charging: put the battery in standby, or allow discharge only. In a real plant that's the
+   EMS or SCADA. In the lab,
+   `echo '{"power_kw": 0, "cooling_failure": true}' > scenarios/bess-01.json`. Frequency response
+   carries on, at a fraction of the current.
+2. Then the HVAC: its supply, its alarms, a container door left open.
+3. If the cells keep heating with no current flowing, treat it as a fire risk: follow the site's
+   emergency procedure and keep people away from the container.
+
+**Escalate:** at once, to the battery's maintenance contractor and the duty manager.
+
+---
+
+## BatteryFault
+
+**Severity:** warning. **Fires when:** the battery has reported state 5 (fault) for 2 minutes.
+
+**What it means:** it's doing nothing at all: no charging, no discharging, no frequency response.
+The reserve it was sold for isn't being delivered.
+
+**Check first**
+1. Cell temperature, `fleet_cell_temperature_celsius{device="bess-01"}`. Around 55 °C, or coming
+   down from there, means the BMS tripped on temperature. It allows a restart once the cells are
+   below 40 °C.
+2. Voltage and frequency alerts. Grid protection reports the same state, and reconnects by itself
+   60 seconds after the grid is back.
+3. Neither? Then it's a fault of its own: the battery's event log (in the lab,
+   `docker compose logs bess-01`).
+
+**Fix:** after a BMS trip, fix the cooling first, or it trips again on the next charge. In the lab,
+delete the battery's scenario file.
+
+**Escalate:** to the battery's maintenance contractor, and tell whoever manages the reserve
+contract, so the FCR can be declared unavailable.

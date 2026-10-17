@@ -10,8 +10,13 @@
 #
 # Input registers (function 04) hold measurements. Holding registers
 # (function 03) hold setpoints.
+#
+# Any change here is a new version: devices report it in map_version, and the
+# collector config and the RegisterMapMismatch alert follow it.
+#   v1  first version
+#   v2  battery: power_setpoint
 
-version = 1
+version = 2
 
 # Value of the device_type register for each kind of device
 [device_types]
@@ -229,6 +234,14 @@ address = 33
 type = "UINT16"
 unit = "kWh"
 description = "Usable energy capacity"
+
+[[battery]]
+name = "power_setpoint"
+register = "input"
+address = 34
+type = "INT16"
+unit = "kW"
+description = "Active power the schedule asks for, before frequency response and state-of-charge limits. Negative charges. The gap to active_power is what the battery is doing on its own."
 
 # Substation at the point of connection. Voltages are on the 110 kV side, and
 # active_power is what the whole fleet exports to the grid.

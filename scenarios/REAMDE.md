@@ -45,7 +45,7 @@ and the `*.json` files are gitignored.
 
 | Key | Type | Effect |
 |---|---|---|
-| `power_kw` | number | Overrides the trading schedule. Negative charges, e.g. `-5000` |
+| `power_kw` | number | Overrides the trading schedule. Negative charges, e.g. `-5000`. The battery reports it as its `power_setpoint` |
 | `cooling_failure` | true/false | The container's HVAC stops, so cells heat up with current |
 | `fault` | true/false | Trips the battery |
 | `maintenance` | true/false | Stops it for planned work |

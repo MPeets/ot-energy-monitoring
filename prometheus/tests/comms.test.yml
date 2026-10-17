@@ -33,7 +33,7 @@ tests:
       - series: 'fleet_active_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
         values: '0x60'
       - series: 'fleet_map_version{device="wt-01", device_type="turbine", site="wind-a"}'
-        values: '1x60'
+        values: '2x60'
     alert_rule_test:
       - eval_time: 8m
         alertname: DeviceSilent
@@ -208,11 +208,12 @@ tests:
               description: "The collector hasn't been able to read inv-02 for over a minute."
               runbook: docs/runbook.md#devicesilent
 
-  # A device reporting a register map the collector wasn't generated for
+  # A device reporting a register map the collector wasn't generated for: a
+  # unit still on v1, say one that was offline when the rest were updated
   - interval: 10s
     input_series:
       - series: 'fleet_map_version{device="wt-03", device_type="turbine", site="wind-a"}'
-        values: '2x60'
+        values: '1x60'
     alert_rule_test:
       - eval_time: 4m
         alertname: RegisterMapMismatch
@@ -226,6 +227,6 @@ tests:
               device_type: turbine
               site: wind-a
             exp_annotations:
-              summary: "wt-03 reports register map v2, the collector expects v1"
+              summary: "wt-03 reports register map v1, the collector expects v2"
               description: "Readings from wt-03 can't be trusted until the collector config is regenerated for its map."
               runbook: docs/runbook.md#registermapmismatch

@@ -80,7 +80,10 @@ class Battery(Device):
             self.bms_tripped = False
         tripped = self.protection.check(now, self.frequency, self.phase_pu)
 
-        planned = conditions.get("power_kw", schedule_kw(now))
+        # What the schedule asks for. Reported as is, so anyone reading the
+        # battery can see the gap between plan and output.
+        setpoint = conditions.get("power_kw", schedule_kw(now))
+        planned = setpoint
         # Full: no more charging. Empty: no more discharging. FCR still works the other way.
         if soc >= SOC_MAX:
             planned = max(planned, 0.0)
@@ -118,4 +121,5 @@ class Battery(Device):
         self.bank.set("state", state)
         self.bank.set("cell_temperature", self.cell_c)
         self.bank.set("active_power", power)
+        self.bank.set("power_setpoint", setpoint)
         self.bank.set("reactive_power", 0.0)

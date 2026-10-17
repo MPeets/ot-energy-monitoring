@@ -75,7 +75,21 @@ class ScheduleTest(unittest.TestCase):
         device.update(MIDDAY + 1, Scenario(device={"maintenance": True}))
         self.assertEqual((bank.get("state"), bank.get("active_power")), (MAINTENANCE, 0))
 
+class SetpointTest(unittest.TestCase):
+    def test_setpoint_is_the_schedule_and_the_gap_is_frequency_response(self):
+        device, bank = make_battery()
+        device.update(EVENING, Scenario(grid={"frequency_offset_hz": -0.1}))
+        self.assertEqual(bank.get("power_setpoint"), schedule_kw(EVENING))
+        gap = bank.get("active_power") - bank.get("power_setpoint")
+        self.assertAlmostEqual(gap, fcr_kw(bank.get("frequency")), delta=6)  # register rounding
+        self.assertGreater(gap, 0)  # low frequency: more discharge than planned
 
+    def test_an_override_is_the_setpoint_and_a_trip_shows_as_the_whole_gap(self):
+        device, bank = make_battery()
+        device.update(NIGHT, Scenario(device={"power_kw": -5000, "fault": True}))
+        self.assertEqual(bank.get("power_setpoint"), -5000)
+        self.assertEqual(bank.get("active_power"), 0)
+        
 class ThermalTest(unittest.TestCase):
     def test_cells_stay_cool_at_full_power_with_working_hvac(self):
         device, bank = make_battery()
