@@ -1,0 +1,353 @@
+# Unit tests for prometheus/rules/generation.yml. Run with:
+#   promtool test rules prometheus/tests/*.yml
+#
+# Series are sampled every 10 s, like the real collector scrape. Rated power:
+# 3.6 MW per turbine, 2.5 MW per inverter with 3 MWp of modules unless a test
+# says otherwise.
+rule_files:
+  - ../rules/generation.yml
+
+evaluation_interval: 10s
+
+tests:
+  # Everything that makes little or nothing for a good reason. None of it fires.
+  - interval: 10s
+    input_series:
+      # wt-01: healthy at 10 m/s, making what the curve says (rounded to the register's kW)
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '10x180'
+      - series: 'fleet_state{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      - series: 'fleet_active_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '2059000x180'
+      - series: 'fleet_rated_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      # wt-02: curtailed to 30% in a strong wind
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '14x180'
+      - series: 'fleet_state{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '3x180'
+      - series: 'fleet_active_power_watts{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '1080000x180'
+      - series: 'fleet_rated_power_watts{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '0.3x180'
+      # wt-03: curtailed to zero
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '14x180'
+      - series: 'fleet_state{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '3x180'
+      - series: 'fleet_active_power_watts{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '0x180'
+      - series: 'fleet_rated_power_watts{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '0x180'
+      # wt-04: calm
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-04", device_type="turbine", site="wind-a"}'
+        values: '2.5x180'
+      - series: 'fleet_state{device="wt-04", device_type="turbine", site="wind-a"}'
+        values: '2x180'
+      - series: 'fleet_active_power_watts{device="wt-04", device_type="turbine", site="wind-a"}'
+        values: '0x180'
+      - series: 'fleet_rated_power_watts{device="wt-04", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-04", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      # wt-05: storm stop
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-05", device_type="turbine", site="wind-a"}'
+        values: '26x180'
+      - series: 'fleet_state{device="wt-05", device_type="turbine", site="wind-a"}'
+        values: '4x180'
+      - series: 'fleet_active_power_watts{device="wt-05", device_type="turbine", site="wind-a"}'
+        values: '0x180'
+      - series: 'fleet_rated_power_watts{device="wt-05", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-05", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      # wt-06: stopped for maintenance in a good wind
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-06", device_type="turbine", site="wind-a"}'
+        values: '10x180'
+      - series: 'fleet_state{device="wt-06", device_type="turbine", site="wind-a"}'
+        values: '6x180'
+      - series: 'fleet_active_power_watts{device="wt-06", device_type="turbine", site="wind-a"}'
+        values: '0x180'
+      - series: 'fleet_rated_power_watts{device="wt-06", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-06", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      # inv-01: clipping hard. 4 MWp of modules on a 2.5 MW inverter (some plants
+      # oversize that much) make 3.4 MW at 1000 W/m2, and it delivers its 2.5 MW.
+      - series: 'fleet_irradiance_watts_per_square_meter{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1000x180'
+      - series: 'fleet_state{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_active_power_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_rated_power_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_dc_capacity_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '4000000x180'
+      - series: 'fleet_power_limit_ratio{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_fault_code{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+      # inv-02: night
+      - series: 'fleet_irradiance_watts_per_square_meter{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+      - series: 'fleet_state{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '2x180'
+      - series: 'fleet_active_power_watts{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+      - series: 'fleet_rated_power_watts{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_dc_capacity_watts{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '3000000x180'
+      - series: 'fleet_power_limit_ratio{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_fault_code{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+      # inv-03: dusk. Expected is 153 kW, below a tenth of its rating, so the
+      # 78% it makes isn't judged.
+      - series: 'fleet_irradiance_watts_per_square_meter{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '60x180'
+      - series: 'fleet_state{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_active_power_watts{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '120000x180'
+      - series: 'fleet_rated_power_watts{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_dc_capacity_watts{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '3000000x180'
+      - series: 'fleet_power_limit_ratio{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_fault_code{device="inv-03", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+      # inv-04: curtailed to 40% in good sun
+      - series: 'fleet_irradiance_watts_per_square_meter{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '800x180'
+      - series: 'fleet_state{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '3x180'
+      - series: 'fleet_active_power_watts{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '1000000x180'
+      - series: 'fleet_rated_power_watts{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_dc_capacity_watts{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '3000000x180'
+      - series: 'fleet_power_limit_ratio{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '0.4x180'
+      - series: 'fleet_fault_code{device="inv-04", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TurbineUnderperforming
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: InverterUnderperforming
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TurbineFault
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: InverterFault
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: InverterGridTrip
+        exp_alerts: []
+
+  # Ice on the blades at 10 minutes: 60% of rated power in a wind that should
+  # give all of it. About 5 minutes to drag the 10 minute average under 80%,
+  # then 10 minutes pending.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '13x180'
+      - series: 'fleet_state{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+      - series: 'fleet_active_power_watts{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '3600000x60 2160000x120'
+      - series: 'fleet_rated_power_watts{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '3600000x180'
+      - series: 'fleet_power_limit_ratio{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '1x180'
+    alert_rule_test:
+      - eval_time: 24m50s
+        alertname: TurbineUnderperforming
+        exp_alerts: []
+      - eval_time: 25m20s
+        alertname: TurbineUnderperforming
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: wt-02
+              device_type: turbine
+              site: wind-a
+            exp_annotations:
+              summary: "wt-02 made 60% of what the wind allowed over the last 10 minutes"
+              description: "It's running, and the expected figure already allows for its power limit, so the gap is lost energy. Usual suspects: ice or dirt on the blades, pitch or yaw misalignment, a derating the controller doesn't report, or an anemometer reading high."
+              runbook: docs/runbook.md#turbineunderperforming
+      - eval_time: 25m20s
+        alertname: TurbineFault
+        exp_alerts: []
+
+  # A power limit doesn't hide a loss. Limited to 80% in a full wind, it should
+  # make 2.88 MW. Iced, it makes 2.16 MW, under the limit, so it reports
+  # "producing" and gets judged against the limit: 75%.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '13x120'
+      - series: 'fleet_state{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '1x120'
+      - series: 'fleet_active_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '2160000x120'
+      - series: 'fleet_rated_power_watts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '3600000x120'
+      - series: 'fleet_power_limit_ratio{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '0.8x120'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: TurbineUnderperforming
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: wt-01
+              device_type: turbine
+              site: wind-a
+            exp_annotations:
+              summary: "wt-01 made 75% of what the wind allowed over the last 10 minutes"
+              description: "It's running, and the expected figure already allows for its power limit, so the gap is lost energy. Usual suspects: ice or dirt on the blades, pitch or yaw misalignment, a derating the controller doesn't report, or an anemometer reading high."
+              runbook: docs/runbook.md#turbineunderperforming
+
+  # Blown string fuses at 10 minutes: 70% of what 700 W/m2 should give
+  - interval: 10s
+    input_series:
+      - series: 'fleet_irradiance_watts_per_square_meter{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '700x180'
+      - series: 'fleet_state{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_active_power_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1785000x60 1249500x120'
+      - series: 'fleet_rated_power_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '2500000x180'
+      - series: 'fleet_dc_capacity_watts{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '3000000x180'
+      - series: 'fleet_power_limit_ratio{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '1x180'
+      - series: 'fleet_fault_code{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 26m30s
+        alertname: InverterUnderperforming
+        exp_alerts: []
+      - eval_time: 27m10s
+        alertname: InverterUnderperforming
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: inv-01
+              device_type: inverter
+              site: solar-b
+            exp_annotations:
+              summary: "inv-01 made 70% of what the sunlight allowed over the last 10 minutes"
+              description: "Expected power is irradiance × module capacity × 0.85, capped at the inverter's rating and its power limit, so clipping and curtailment don't count. Usual suspects: blown string fuses, snow or soiling on part of the array, or a pyranometer reading high."
+              runbook: docs/runbook.md#inverterunderperforming
+
+  # A turbine trips at 1 minute. A stopped unit is a fault, not underperformance.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_wind_speed_meters_per_second{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '10x60'
+      - series: 'fleet_state{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '1x5 5x55'
+      - series: 'fleet_active_power_watts{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '2059000x5 0x55'
+      - series: 'fleet_rated_power_watts{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '3600000x60'
+      - series: 'fleet_power_limit_ratio{device="wt-03", device_type="turbine", site="wind-a"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 2m50s
+        alertname: TurbineFault
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: TurbineFault
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: wt-03
+              device_type: turbine
+              site: wind-a
+            exp_annotations:
+              summary: "wt-03 has tripped and isn't producing"
+              description: "The turbine reports a fault. Its grid protection reports the same state, so if a voltage or frequency alert is firing as well, the grid tripped it and it reconnects by itself once the grid is back."
+              runbook: docs/runbook.md#turbinefault
+      - eval_time: 10m
+        alertname: TurbineUnderperforming
+        exp_alerts: []
+
+  # Inverter faults name themselves, and the code becomes a label
+  - interval: 10s
+    input_series:
+      - series: 'fleet_fault_code{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '0x5 301x30'
+      - series: 'fleet_fault_code{device="inv-02", device_type="inverter", site="solar-b"}'
+        values: '0x5 201x30'
+    alert_rule_test:
+      - eval_time: 2m50s
+        alertname: InverterFault
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: InverterFault
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              fault_code: "301"
+              device: inv-01
+              device_type: inverter
+              site: solar-b
+            exp_annotations:
+              summary: "inv-01 tripped: overtemperature"
+              description: "The inverter stopped on a fault of its own. Some clear by themselves, like overtemperature on a hot afternoon. An insulation fault means damaged insulation somewhere in the array and needs someone on site."
+              runbook: docs/runbook.md#inverterfault
+          - exp_labels:
+              severity: warning
+              fault_code: "201"
+              device: inv-02
+              device_type: inverter
+              site: solar-b
+            exp_annotations:
+              summary: "inv-02 tripped: DC insulation fault"
+              description: "The inverter stopped on a fault of its own. Some clear by themselves, like overtemperature on a hot afternoon. An insulation fault means damaged insulation somewhere in the array and needs someone on site."
+              runbook: docs/runbook.md#inverterfault
+      - eval_time: 3m
+        alertname: InverterGridTrip
+        exp_alerts: []
+
+  # A grid protection trip is its own, quieter alert, not an inverter fault
+  - interval: 10s
+    input_series:
+      - series: 'fleet_fault_code{device="inv-01", device_type="inverter", site="solar-b"}'
+        values: '0x5 102x20'
+    alert_rule_test:
+      - eval_time: 1m50s
+        alertname: InverterGridTrip
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: InverterGridTrip
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              device: inv-01
+              device_type: inverter
+              site: solar-b
+            exp_annotations:
+              summary: "inv-01 disconnected on grid undervoltage"
+              description: "Its grid protection opened. That's the protection doing its job, not a fault in the inverter, and it reconnects by itself 60 seconds after the grid is back in range. The voltage and frequency alerts say what happened to the grid."
+              runbook: docs/runbook.md#invertergridtrip
+      - eval_time: 2m
+        alertname: InverterFault
+        exp_alerts: []

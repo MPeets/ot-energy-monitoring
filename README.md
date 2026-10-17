@@ -81,6 +81,23 @@ meter in the fleet and need at least three. One bad meter can't page anyone, it 
 its own instead. Voltages are compared in per-unit of each device's nominal, so the same
 thresholds work at 690 V and at 110 kV.
 
+### Generation
+
+| Alert | Severity | Means |
+|---|---|---|
+| TurbineUnderperforming | warning | Under 80% of what the power curve says its wind allows, over 10 minutes |
+| InverterUnderperforming | warning | Under 80% of what its irradiance allows, over 10 minutes |
+| TurbineFault | warning | A turbine has tripped |
+| InverterFault | warning | An inverter stopped on a fault of its own, named from its fault code |
+| InverterGridTrip | info | An inverter's grid protection opened: zero output, and not its fault |
+
+Output is never compared with a fixed number. Expected power is what the wind or sunlight allows,
+capped at the unit's power limit, so curtailment and clipping lower the expectation instead of
+counting as losses. Units are judged only while running for a full 10 minutes and expected to
+make at least a tenth of their rating, so a calm night, a storm stop or dusk is never
+underperformance. The tests cover each of those cases, and a contract test keeps the rules on the
+same power curve and performance ratio as the simulated devices.
+
 ## Layout
 
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory

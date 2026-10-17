@@ -1,0 +1,130 @@
+# Generation: is each unit making what the weather allows, and if it's
+# making nothing, why?
+#
+# Low output on its own means nothing. A calm night, a storm stop, a cloudy
+# afternoon, a park curtailed by the grid operator and an inverter clipping at
+# its rating are all normal. So nothing here compares output with a fixed
+# number. It's compared with what the unit should be making right now, given
+# its wind or sunlight and the power limit it was told to keep to.
+groups:
+  # One group, recording rules first, for the same reason as in comms.yml
+  - name: generation
+    rules:
+      # What the weather allows each unit to make.
+      #
+      # Turbines, from the power curve: cubic from cut-in (3 m/s) to rated wind
+      # (12 m/s), flat up to cut-out (25 m/s). The same curve as
+      # fleet/models/turbine.py. In a real fleet it's the manufacturer's curve
+      # for the turbine model, as a lookup table.
+      #
+      # Inverters: irradiance x module capacity x the 0.85 performance ratio
+      # (heat, wiring and conversion losses). That's what the modules can
+      # deliver, which on a bright day is more than the inverter can pass on.
+      - record: device:available_power_watts
+        expr: |
+          (
+            clamp((fleet_wind_speed_meters_per_second ^ 3 - 3 ^ 3) / (12 ^ 3 - 3 ^ 3), 0, 1)
+            * (fleet_wind_speed_meters_per_second < bool 25)
+            * fleet_rated_power_watts
+          )
+          or
+          fleet_irradiance_watts_per_square_meter / 1000 * 0.85 * fleet_dc_capacity_watts
+
+      # What it should make: what's available, but no more than its power limit.
+      # The limit is a share of the unit's rating, so this is also where an
+      # inverter's clipping comes in, and curtailment lowers the expectation
+      # instead of counting as a loss. "(a < b) or b" is PromQL for min(a, b).
+      - record: device:expected_power_watts
+        expr: |
+          (device:available_power_watts < fleet_power_limit_ratio * fleet_rated_power_watts)
+          or fleet_power_limit_ratio * fleet_rated_power_watts
+
+      # 1 while producing or curtailed (states 1 and 3 on turbines and inverters
+      # alike), 0 in low wind, standby, storm stop, fault or maintenance
+      - record: device:running:bool
+        expr: |
+          (fleet_state{device_type=~"turbine|inverter"} == bool 1)
+          + (fleet_state{device_type=~"turbine|inverter"} == bool 3)
+
+      # Actual over expected output across 10 minutes, the averaging period
+      # power curves are defined on. Only for units that ran the whole window
+      # and were expected to make at least a tenth of their rating. Below that
+      # the ratio is noise: the minutes around cut-in, dawn and dusk.
+      - record: device:performance:ratio_10m
+        expr: |
+          (
+            avg_over_time(fleet_active_power_watts[10m])
+            / avg_over_time(device:expected_power_watts[10m])
+          )
+          and on (device) min_over_time(device:running:bool[10m]) == 1
+          and on (device) avg_over_time(device:expected_power_watts[10m]) > 0.1 * fleet_rated_power_watts
+
+      - alert: TurbineUnderperforming
+        expr: device:performance:ratio_10m{device_type="turbine"} < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} made {{ $value | humanizePercentage }} of what the wind allowed over the last 10 minutes"
+          description: >-
+            It's running, and the expected figure already allows for its power limit, so the
+            gap is lost energy. Usual suspects: ice or dirt on the blades, pitch or yaw
+            misalignment, a derating the controller doesn't report, or an anemometer reading high.
+          runbook: docs/runbook.md#turbineunderperforming
+
+      - alert: InverterUnderperforming
+        expr: device:performance:ratio_10m{device_type="inverter"} < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} made {{ $value | humanizePercentage }} of what the sunlight allowed over the last 10 minutes"
+          description: >-
+            Expected power is irradiance × module capacity × 0.85, capped at the inverter's
+            rating and its power limit, so clipping and curtailment don't count. Usual suspects:
+            blown string fuses, snow or soiling on part of the array, or a pyranometer reading high.
+          runbook: docs/runbook.md#inverterunderperforming
+
+      - alert: TurbineFault
+        expr: fleet_state{device_type="turbine"} == 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} has tripped and isn't producing"
+          description: >-
+            The turbine reports a fault. Its grid protection reports the same state, so if a
+            voltage or frequency alert is firing as well, the grid tripped it and it reconnects
+            by itself once the grid is back.
+          runbook: docs/runbook.md#turbinefault
+
+      # Inverters report why they stopped. 2xx and up are faults in the plant,
+      # 1xx are grid protection trips, which get their own alert below.
+      - alert: InverterFault
+        expr: fleet_fault_code{device_type="inverter"} >= 200
+        for: 2m
+        labels:
+          severity: warning
+          fault_code: "{{ $value }}"
+        annotations:
+          summary: >-
+            {{ $labels.device }} tripped: {{ if eq $value 201.0 }}DC insulation fault{{ else if eq $value 301.0 }}overtemperature{{ else }}fault code {{ $value }}{{ end }}
+          description: >-
+            The inverter stopped on a fault of its own. Some clear by themselves, like
+            overtemperature on a hot afternoon. An insulation fault means damaged insulation
+            somewhere in the array and needs someone on site.
+          runbook: docs/runbook.md#inverterfault
+
+      - alert: InverterGridTrip
+        expr: fleet_fault_code{device_type="inverter"} >= 100 < 200
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: >-
+            {{ $labels.device }} disconnected on {{ if eq $value 101.0 }}grid overvoltage{{ else if eq $value 102.0 }}grid undervoltage{{ else if eq $value 103.0 }}grid frequency out of range{{ else }}grid protection code {{ $value }}{{ end }}
+          description: >-
+            Its grid protection opened. That's the protection doing its job, not a fault in the
+            inverter, and it reconnects by itself 60 seconds after the grid is back in range.
+            The voltage and frequency alerts say what happened to the grid.
+          runbook: docs/runbook.md#invertergridtrip
