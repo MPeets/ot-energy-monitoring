@@ -144,6 +144,39 @@ services:
     mem_limit: 1g
     cpus: 1.0
 
+
+  # Routing, grouping and inhibition. IT only: nothing in the DMZ can raise,
+  # silence or read an alert.
+  alertmanager:
+    <<: *hardening
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.28.1}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks: [it]
+    mem_limit: 128m
+    cpus: 0.25
+
+  # Stand-in for the pager, the shift's queue and the log: prints one line per
+  # notification. docker compose logs -f webhook-logger
+  webhook-logger:
+    <<: *hardening
+    image: python:${PYTHON_VERSION:-3.12.11-alpine3.22}
+    user: "65534:65534"
+    init: true
+    command: ["python", "-u", "-B", "/app/server.py"]
+    volumes:
+      - ./tools/webhook-logger:/app:ro
+    networks: [it]
+    mem_limit: 64m
+    cpus: 0.25
+
   # Tools below aren't started by "up". Run them with: docker compose run --rm <name> ...
 
   # A laptop on the OT network: reads devices by hand, and stands in for the
@@ -196,3 +229,4 @@ networks:
 
 volumes:
   prometheus-data:
+  alertmanager-data:

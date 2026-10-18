@@ -23,6 +23,10 @@ The rule for every thermal alert: **act on the trend, not the trip.** Protection
 limit whether anyone is watching or not. The alerts are there so someone can take load off first,
 and the earliest sign is usually heat the load doesn't explain.
 
+Where alerts go is set in `alertmanager/alertmanager.yml`: critical alerts page on-call, warnings
+go to the shift, info goes to the log, and underperformance waits for the morning. Where one
+alert mutes another, the section says so under **In Alertmanager**.
+
 ---
 
 ## CollectorDown
@@ -33,6 +37,10 @@ a minute.
 **What it means:** nothing from the fleet is arriving. Device alerts go quiet along with it,
 because their series stop existing instead of reading zero, so the lack of other alerts means
 nothing right now.
+
+**In Alertmanager:** mutes every other fleet alert while it fires, resolved notifications
+included. When the data stops, alerts resolve because their series are gone, and a run of
+all-clears is the last thing anyone should get while the fleet is invisible.
 
 **Check first**
 1. `docker compose ps collector` and `docker compose logs --tail 50 collector`
@@ -59,6 +67,9 @@ minute.
 together, but the path they share can. Look at the gateway and the OT/DMZ conduit before
 looking at any site.
 
+**In Alertmanager:** mutes every other fleet alert while it fires, the same way `CollectorDown`
+does.
+
 **Check first**
 1. `docker compose logs --tail 20 modbus-gateway`: lines saying a unit `is not responding` mean
    the gateway is up but can't reach OT. A stopped container means the gateway itself.
@@ -81,6 +92,9 @@ or the conduit.
 
 **What it means:** you're blind to that site. The values on the dashboard are history, not
 status. The site may be producing, curtailed or tripped, and this alert can't tell you which.
+
+**In Alertmanager:** mutes every other alert from this site while it fires, so the site's
+silence arrives as this one alert.
 
 **Check first**
 1. **Is the site still exporting?** The substation measures what every site sends through it.
@@ -107,8 +121,10 @@ real outage, and the export drop is the evidence to hand over.
 
 **Severity:** warning. **Fires when:** one device hasn't answered for a minute.
 
-**What it means:** one device's data is missing while the rest of its site is visible. When a
-whole site goes quiet, `SiteSilent` fires as well and is the one to work on.
+**What it means:** one device's data is missing while the rest of its site is visible.
+
+**In Alertmanager:** mutes this device's other alerts while it fires. When the whole site goes
+quiet, `SiteSilent` mutes this one in turn.
 
 **Check first**
 1. `docker compose logs --tail 20 modbus-gateway`: is the unit listed as not responding?
@@ -185,6 +201,9 @@ not a measurement: a sustained imbalance the TSOs' restoration reserves haven't 
 Short excursions are normal (when market schedules step, for example), and the time conditions
 filter them out.
 
+**In Alertmanager:** when both criteria fire, the 100 mHz one mutes the 15 minute one, and
+`GridFrequencyCritical` mutes both.
+
 **Check first**
 1. Is the battery responding? Its frequency response is proportional and full at 200 mHz, so at
    100 mHz `bess-01` should be about 500 kW off its setpoint: discharging more when frequency is
@@ -217,6 +236,8 @@ for a minute.
 containment reserve across the synchronous area is fully activated, so there's nothing left in
 it for the next disturbance, and frequency this far out puts the system in the emergency state
 under SOGL. It's rare and it's big: a system split, or several gigawatts lost at once.
+
+**In Alertmanager:** mutes `GridFrequencyDeviation`.
 
 **Check first**
 1. Is it real? Look at `fleet_frequency_hertz` per device: every site should show the same step
@@ -276,6 +297,8 @@ minutes.
 transformer taps between it and the grid. 5% off is still within what the equipment is built
 for, but it's the early warning before units get near their protection settings.
 
+**In Alertmanager:** muted on a phase while `PhaseVoltageCritical` fires for it.
+
 **Check first**
 1. One phase or all three? `device:phase_voltage:per_unit{device="<device>"}`. All three together
    points at the grid or a tap changer. One alone points at that phase: a connection, a fuse, or
@@ -301,11 +324,15 @@ voltage is theirs.
 ## PhaseVoltageCritical
 
 **Severity:** critical. **Fires when:** a phase voltage has been more than 10% off nominal for a
-minute.
+minute. It keeps firing for 2 minutes after the voltage is back, which covers the units' 60
+second reconnect.
 
 **What it means:** the unit is close to the protection settings that disconnect it (0.85 and 1.15
 pu in this lab) or already past them. If it has tripped, its output is zero because of the grid,
 not because anything is wrong with the unit, so it's not a job for the turbine technician.
+
+**In Alertmanager:** mutes `PhaseVoltageOutOfTolerance` on the same phase, and `TurbineFault` or
+`BatteryFault` for the same unit, since the voltage is why it tripped.
 
 **Check first**
 1. Has it tripped? A tripped unit reports state 5 (`fleet_state == 5`), and an inverter's fault
@@ -335,6 +362,9 @@ storm stops, faults, maintenance and the noisy minutes around cut-in never count
 morning, not a call-out. Except in icing weather: blades carrying ice throw it. Most turbines
 stop themselves when they detect ice, so one that keeps running iced is both underperforming and
 dangerous to stand under.
+
+**In Alertmanager:** held overnight, from 22:00 to 07:00 Tallinn time, and sent in the morning
+if it's still firing.
 
 **Check first**
 1. Its neighbours, in the same wind. `device:performance:ratio_10m{site="wind-a"}` and
@@ -368,6 +398,9 @@ should be making less than a tenth of its rating.
 usually means strings lost. A slow decline over weeks is soiling, which this alert won't catch:
 that's for a daily report, not a 10 minute window.
 
+**In Alertmanager:** held overnight, from 22:00 to 07:00 Tallinn time, and sent in the morning
+if it's still firing.
+
 **Check first**
 1. The other inverter at the site. They share a pyranometer, so both low together, in the same
    light, points at the pyranometer or the weather (snow), not at two inverters failing at once.
@@ -393,6 +426,9 @@ array, new shading, a pyranometer out of calibration or knocked out of alignment
 rule out the grid before treating it as a turbine fault. Real turbine controllers report a status
 code that says why they stopped. This lab's turbines don't, so the cause comes from what else is
 happening at the same time.
+
+**In Alertmanager:** muted while `PhaseVoltageCritical` fires for the same turbine, so a grid
+trip doesn't send anyone out to it.
 
 **Check first**
 1. Voltage and frequency alerts. `PhaseVoltageCritical` for this turbine, or
@@ -481,6 +517,8 @@ for 5 minutes.
 usual rule of thumb is twice as fast for every 6 °C or so at the hottest spot), so hours up here
 cost transformer life even if nothing trips.
 
+**In Alertmanager:** muted while `TransformerOilCritical` fires.
+
 **Check first**
 1. Load or cooling? Compare `device:top_oil_rise_kelvin{device="sub-01"}` with
    `device:top_oil_rise_kelvin:expected{device="sub-01"}`. Close together means it's the load and
@@ -510,6 +548,9 @@ schedules the fleet if export has to be held down.
 **What it means:** it's close to where the transformer's own temperature protection trips it. If
 it trips, every site exporting through it drops off at once: the whole fleet's output gone in one
 step, and an imbalance nobody planned for.
+
+**In Alertmanager:** mutes `TransformerOilHot`. `TransformerCoolingDegraded` stays on, because
+it says why.
 
 **Check first:** the same as `TransformerOilHot`, but don't spend long on it. Taking load off comes
 first.
@@ -561,9 +602,11 @@ charge in (one LFP datasheet: 0 to 45 °C charging, -20 to 60 °C discharging), 
 the battery management system's 55 °C trip. Heat ages cells too, so even a battery that never
 trips pays for running hot.
 
+**In Alertmanager:** muted while `BatteryHeatingWhileCharging` fires for the same battery.
+
 **Check first**
-1. Is it charging? Then `BatteryHeatingWhileCharging` is probably firing as well, and it's the
-   one to work on.
+1. Is it charging? If the cells were also climbing fast, `BatteryHeatingWhileCharging` would be
+   firing and would have muted this one. So: hot, but not running away. Ease off anyway.
 2. The HVAC. In reality, the container's own HVAC alarms. In the lab, `cooling_failure` in its
    scenario.
 3. Its power, `fleet_active_power_watts{device="bess-01"}`. Heat comes from current, so full
@@ -586,6 +629,9 @@ already warm. Heat is where thermal runaway starts. In the lab, a cooling failur
 power gets from this alert to the BMS trip in about five minutes. A real container is slower, but
 the order is the same.
 
+**In Alertmanager:** mutes `BatteryCellTemperatureHigh`. `BatteryFault` stays on if the BMS
+trips.
+
 **Check first:** nothing that delays the fix. Stop the charging, then look.
 
 **Fix**
@@ -607,6 +653,9 @@ the order is the same.
 
 **What it means:** it's doing nothing at all: no charging, no discharging, no frequency response.
 The reserve it was sold for isn't being delivered.
+
+**In Alertmanager:** muted while `PhaseVoltageCritical` fires for the battery: the grid tripped
+it.
 
 **Check first**
 1. Cell temperature, `fleet_cell_temperature_celsius{device="bess-01"}`. Around 55 °C, or coming

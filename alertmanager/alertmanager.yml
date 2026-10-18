@@ -1,0 +1,126 @@
+# Who hears about what, and how one fault stays one notification.
+#
+# Prometheus decides that something is wrong. Alertmanager decides who needs
+# to know, and keeps a single cause from arriving as a dozen alerts. In the lab
+# every receiver is the webhook logger; in a control room they'd be the pager,
+# the shift's queue and a log.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  # One notification per alert and site: a voltage problem across a park's
+  # three turbines arrives as one message, not nine
+  group_by: [alertname, site]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Dead man's switch: keeps arriving every minute while alerting works.
+    # In production this goes to a separate checker that alarms when it stops.
+    - matchers: [alertname="Watchdog"]
+      receiver: watchdog
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+
+    # Wakes someone up
+    - matchers: [severity="critical"]
+      receiver: oncall
+      repeat_interval: 1h
+
+    # Lost energy is money, not safety. Nobody gets it at night; whatever is
+    # still firing goes out when the night ends.
+    - matchers: [alertname=~"TurbineUnderperforming|InverterUnderperforming"]
+      receiver: team
+      mute_time_intervals: [night]
+      repeat_interval: 12h
+
+    # For the shift to deal with, no pager
+    - matchers: [severity="warning"]
+      receiver: team
+      repeat_interval: 12h
+
+    # Context only: recorded, nobody notified
+    - matchers: [severity="info"]
+      receiver: log
+      repeat_interval: 24h
+
+time_intervals:
+  - name: night
+    time_intervals:
+      - times:
+          - start_time: "22:00"
+            end_time: "24:00"
+          - start_time: "00:00"
+            end_time: "07:00"
+        location: Europe/Tallinn
+
+inhibit_rules:
+  # When the data stops, the alerts built on it resolve because their series
+  # are gone, not because anything got better. So each "no data" alert mutes
+  # everything that depends on the data it says is missing, resolved
+  # notifications included. Only the root cause gets through.
+
+  # Blind to the whole fleet
+  - source_matchers: [alertname=~"CollectorDown|FleetSilent"]
+    target_matchers: [alertname!~"CollectorDown|FleetSilent|Watchdog"]
+
+  # Blind to one site
+  - source_matchers: [alertname="SiteSilent"]
+    target_matchers: [alertname!~"SiteSilent|FleetSilent|CollectorDown|Watchdog"]
+    equal: [site]
+
+  # Blind to one device
+  - source_matchers: [alertname="DeviceSilent"]
+    target_matchers: [alertname!~"DeviceSilent|SiteSilent|FleetSilent|CollectorDown|Watchdog"]
+    equal: [device]
+
+  # The critical version of an alert already says what its warning would
+  - source_matchers: [alertname="GridFrequencyCritical"]
+    target_matchers: [alertname="GridFrequencyDeviation"]
+  - source_matchers: [alertname="GridFrequencyDeviation", criterion="100mHz-5m"]
+    target_matchers: [alertname="GridFrequencyDeviation", criterion="50mHz-15m"]
+  - source_matchers: [alertname="PhaseVoltageCritical"]
+    target_matchers: [alertname="PhaseVoltageOutOfTolerance"]
+    equal: [device, phase]
+  - source_matchers: [alertname="TransformerOilCritical"]
+    target_matchers: [alertname="TransformerOilHot"]
+    equal: [device]
+  - source_matchers: [alertname="BatteryHeatingWhileCharging"]
+    target_matchers: [alertname="BatteryCellTemperatureHigh"]
+    equal: [device]
+
+  # A unit that trips while its terminals are that far out was tripped by the
+  # grid. The voltage alert says why; a fault alert would send someone to fix
+  # a unit that isn't broken. (Inverters say so themselves, as InverterGridTrip.)
+  - source_matchers: [alertname="PhaseVoltageCritical"]
+    target_matchers: [alertname=~"TurbineFault|BatteryFault"]
+    equal: [device]
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://webhook-logger:8080/default
+        send_resolved: true
+
+  - name: oncall
+    webhook_configs:
+      - url: http://webhook-logger:8080/oncall
+        send_resolved: true
+
+  - name: team
+    webhook_configs:
+      - url: http://webhook-logger:8080/team
+        send_resolved: true
+
+  - name: log
+    webhook_configs:
+      - url: http://webhook-logger:8080/log
+        send_resolved: true
+
+  - name: watchdog
+    webhook_configs:
+      - url: http://webhook-logger:8080/watchdog
+        send_resolved: false

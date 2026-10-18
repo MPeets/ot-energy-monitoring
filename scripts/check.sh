@@ -14,6 +14,10 @@ docker compose run --rm --no-deps -T --entrypoint sh prometheus -c '
   promtool test rules /etc/prometheus/tests/*.yml
 '
 
+echo "== Alertmanager =="
+# Config, routing, and inhibition against a throwaway Alertmanager inside the container
+docker compose run --rm --no-deps -T --entrypoint sh alertmanager /etc/alertmanager/test.sh
+
 echo "== Runbook links =="
 # Every runbook link in an alert must point to a heading that exists in docs/runbook.md.
 headings="$(grep -E '^## ' docs/runbook.md | sed 's/^## //' | tr -d '\r ' | tr '[:upper:]' '[:lower:]')"

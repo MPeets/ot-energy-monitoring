@@ -15,6 +15,8 @@ generic.
     docker compose run --rm ot-workstation dump wt-01
 
 - Prometheus: http://localhost:9090 (the `collector` target should be UP)
+- Alertmanager: http://localhost:9093
+- Notifications: `docker compose logs -f webhook-logger`
 
 ## The simulated fleet
 
@@ -36,7 +38,7 @@ changes conditions in the simulated world.
 | `ot` | the devices, `modbus-gateway` | Field devices. Internal, no route out |
 | `ot-dmz` | `modbus-gateway`, `collector` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
 | `dmz-it` | `collector`, `prometheus` | Conduit from the DMZ to IT. Carries the collector's metrics endpoint, nothing else |
-| `it` | `prometheus` | The IT side, where the UIs live. The only network with ports published to the host |
+| `it` | `prometheus`, `alertmanager`, `webhook-logger` | The IT side, where the UIs and alerting live. The only network with ports published to the host |
 
 Three services sit on two networks: the gateway, the collector and Prometheus. None of them
 routes traffic between its networks; each only speaks its own protocol to the next zone.
@@ -46,6 +48,20 @@ routes traffic between its networks; each only speaks its own protocol to the ne
 
 Every alert has unit tests (`prometheus/tests/`), including cases that must not fire, and a
 section in [docs/runbook.md](docs/runbook.md).
+
+Alertmanager routes them by severity: critical pages on-call, warning goes to the shift, info
+goes to the log, and underperformance is held overnight. Inhibition keeps one cause from arriving
+as many alerts:
+
+- **No data mutes what depends on it.** CollectorDown and FleetSilent mute the whole fleet,
+  SiteSilent mutes its site, DeviceSilent mutes its device, resolved notifications included, so
+  going blind never looks like an all-clear.
+- **Critical mutes its own warning:** frequency, voltage per phase, transformer oil, battery cells.
+- **The grid mutes the trips it caused.** A unit that faults while its voltage is critical was
+  tripped by the grid, and the voltage alert stays on through its 60 second reconnect.
+
+`alertmanager/test.sh` checks the routing with amtool, and the inhibition against a real
+Alertmanager, from `./scripts/check.sh`.
 
 ### Communications
 
@@ -117,6 +133,7 @@ while charging, where working cooling would have levelled them off.
 
 ## Layout
 
+    alertmanager/   routing and inhibition, and their tests
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
     docs/           runbook
     prometheus/     Prometheus config, alert rules and their unit tests
@@ -124,6 +141,7 @@ while charging, where working cooling would have levelled them off.
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
     scripts/        helper scripts
     tests/          unit tests
+    tools/          webhook-logger, the lab's stand-in for a pager
     inventory.toml  the asset list: every device, its site and the unit id it's reached by
     
 ## Status

@@ -109,6 +109,10 @@ groups:
       - alert: PhaseVoltageCritical
         expr: device:phase_voltage:per_unit > 1.10 or device:phase_voltage:per_unit < 0.90
         for: 1m
+        # Units reconnect 60 s after the voltage is back. Firing on a little
+        # longer than that keeps their trip muted in Alertmanager until they're
+        # back, instead of it turning up as a fault on the way out.
+        keep_firing_for: 2m
         labels:
           severity: critical
         annotations:

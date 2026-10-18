@@ -61,12 +61,13 @@ expect ot     closed 1.1.1.1:53
 expect ot-dmz open   modbus-gateway:502
 # shellcheck disable=SC2046  # one argument per target is the point
 expect ot-dmz closed $(targets wt-01 502) 1.1.1.1:53
-# DMZ/IT conduit: the collector's metrics endpoint, nothing towards OT
+# DMZ/IT conduit: the collector's metrics endpoint, nothing towards OT, and no
+# way to raise or silence an alert
 expect dmz-it open   collector:9273
 # shellcheck disable=SC2046
-expect dmz-it closed $(targets modbus-gateway 502) $(targets wt-01 502) 1.1.1.1:53
-# IT: Prometheus, but no path to the collector, the gateway or a device
-expect it     open   prometheus:9090
+expect dmz-it closed $(targets modbus-gateway 502) $(targets wt-01 502) $(targets alertmanager 9093) 1.1.1.1:53
+# IT: Prometheus and Alertmanager, but no path to the collector, the gateway or a device
+expect it     open   prometheus:9090 alertmanager:9093
 # shellcheck disable=SC2046
 expect it     closed $(targets collector 9273) $(targets modbus-gateway 502) $(targets wt-01 502)
 

@@ -299,3 +299,29 @@ tests:
               summary: "L3 at sub-01 is 1.110 pu, outside ±10%"
               description: "Close to or past the protection settings that disconnect the unit at 0.85 and 1.15 pu. If it has tripped, its output is zero because of the grid, not the unit."
               runbook: docs/runbook.md#phasevoltagecritical
+
+  # The voltage comes back at 4m30s. The alert stays on for 2 more minutes,
+  # covering the units' 60 s reconnect, and still shows the last bad reading.
+  - interval: 10s
+    input_series:
+      - series: 'fleet_voltage_l1_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x5 352x20 400x40'
+      - series: 'fleet_voltage_nominal_volts{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '400x65'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PhaseVoltageCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: wt-01
+              device_type: turbine
+              site: wind-a
+              phase: l1
+            exp_annotations:
+              summary: "L1 at wt-01 is 0.880 pu, outside ±10%"
+              description: "Close to or past the protection settings that disconnect the unit at 0.85 and 1.15 pu. If it has tripped, its output is zero because of the grid, not the unit."
+              runbook: docs/runbook.md#phasevoltagecritical
+      - eval_time: 6m30s
+        alertname: PhaseVoltageCritical
+        exp_alerts: []
