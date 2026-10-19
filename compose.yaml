@@ -163,6 +163,40 @@ services:
     mem_limit: 128m
     cpus: 0.25
 
+  # Dashboards, on the IT side like everything people look at. Hardened the
+  # same way as in airgapped-observability-lab: no sign-up, no anonymous
+  # access, and nothing that would try to reach the internet.
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:${GRAFANA_VERSION:-12.1.0}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/fleet-overview.json
+      GF_LOG_MODE: console
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [it]
+    depends_on: [prometheus]
+    mem_limit: 512m
+    cpus: 1.0
+
   # Stand-in for the pager, the shift's queue and the log: prints one line per
   # notification. docker compose logs -f webhook-logger
   webhook-logger:
@@ -208,6 +242,7 @@ services:
       - ./collector:/app/collector:ro
       - ./prometheus:/app/prometheus:ro
       - ./docs:/app/docs:ro
+      - ./grafana:/app/grafana:ro
     network_mode: none
     restart: "no"
 
@@ -230,3 +265,4 @@ networks:
 volumes:
   prometheus-data:
   alertmanager-data:
+  grafana-data:

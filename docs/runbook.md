@@ -98,9 +98,9 @@ silence arrives as this one alert.
 
 **Check first**
 1. **Is the site still exporting?** The substation measures what every site sends through it.
-   If `fleet_active_power_watts{device="sub-01"}` hasn't dropped by about the site's last
-   output, the plant is running and only its communications are down. That one query decides
-   whether this is a comms ticket or a call-out.
+   If `fleet_active_power_watts{device="sub-01"}` (the export tile on the fleet overview) hasn't
+   dropped by about the site's last output, the plant is running and only its communications are
+   down. That one query decides whether this is a comms ticket or a call-out.
 2. `docker compose logs --tail 20 modbus-gateway`: which units stopped responding, and when?
    Unit ids go by site: 1x wind, 2x solar, 3x storage, 4x substation.
 3. Are the other sites fine? Then the fault is between the gateway and this site: its link, its

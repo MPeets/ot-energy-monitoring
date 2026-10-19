@@ -22,6 +22,20 @@ groups:
       # Share of a site's devices the collector can hear
       - record: site:devices_reachable:ratio
         expr: avg by (site) (device:reachable:bool)
+      
+      # A unit's state for dashboards, with silence as a state of its own: 99,
+      # "no data". Without it a silent unit is just a gap, or its last state
+      # for as long as the collector keeps serving it. Units that report a
+      # state at all (the substation doesn't) are the ones seen in the last hour.
+      - record: device:state
+        expr: |
+          max by (device, device_type, site) (fleet_state)
+          or on (device)
+          (
+            max by (device, device_type, site) (last_over_time(fleet_state[1h])) * 0 + 99
+            and on (device) device:reachable:bool == 0
+          )
+
 
       - alert: Watchdog
         expr: vector(1)

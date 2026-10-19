@@ -230,3 +230,35 @@ tests:
               summary: "wt-03 reports register map v1, the collector expects v2"
               description: "Readings from wt-03 can't be trusted until the collector config is regenerated for its map."
               runbook: docs/runbook.md#registermapmismatch
+
+  # Dashboards get silence as a state of its own, 99, instead of a gap
+  - interval: 10s
+    input_series:
+      # wt-01 reports, curtailed
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-01", site="wind-a"}'
+        values: '0+1x60'
+      - series: 'fleet_state{device="wt-01", device_type="turbine", site="wind-a"}'
+        values: '3x60'
+      # wt-02 goes quiet at 2m. The collector serves its last state for a while, then drops it.
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="wt-02", site="wind-a"}'
+        values: '0+1x12 12x48'
+      - series: 'fleet_state{device="wt-02", device_type="turbine", site="wind-a"}'
+        values: '1x18 stale'
+      # sub-01 has no state register, so it gets no row at all
+      - series: 'internal_gather_metrics_gathered{input="modbus", device="sub-01", site="sub-d"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: device:state
+        eval_time: 2m30s
+        exp_samples:
+          - labels: 'device:state{device="wt-01", device_type="turbine", site="wind-a"}'
+            value: 3
+          - labels: 'device:state{device="wt-02", device_type="turbine", site="wind-a"}'
+            value: 1
+      - expr: device:state
+        eval_time: 5m
+        exp_samples:
+          - labels: 'device:state{device="wt-01", device_type="turbine", site="wind-a"}'
+            value: 3
+          - labels: 'device:state{device="wt-02", device_type="turbine", site="wind-a"}'
+            value: 99

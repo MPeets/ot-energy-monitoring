@@ -65,9 +65,9 @@ expect ot-dmz closed $(targets wt-01 502) 1.1.1.1:53
 # way to raise or silence an alert
 expect dmz-it open   collector:9273
 # shellcheck disable=SC2046
-expect dmz-it closed $(targets modbus-gateway 502) $(targets wt-01 502) $(targets alertmanager 9093) 1.1.1.1:53
-# IT: Prometheus and Alertmanager, but no path to the collector, the gateway or a device
-expect it     open   prometheus:9090 alertmanager:9093
+expect dmz-it closed $(targets modbus-gateway 502) $(targets wt-01 502) $(targets alertmanager 9093) $(targets grafana 3000) 1.1.1.1:53
+# IT: Prometheus, Alertmanager and Grafana, but no path to the collector, the gateway or a device
+expect it     open   prometheus:9090 alertmanager:9093 grafana:3000
 # shellcheck disable=SC2046
 expect it     closed $(targets collector 9273) $(targets modbus-gateway 502) $(targets wt-01 502)
 

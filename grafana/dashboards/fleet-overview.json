@@ -1,0 +1,533 @@
+{
+    "uid": "fleet-overview",
+    "title": "Fleet overview",
+    "description": "The whole fleet on one screen. Silence shows as its own state, never as zero, and curtailment is blue, never red.",
+    "tags": ["fleet", "ot"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": false,
+    "refresh": "10s",
+    "time": {"from": "now-3h", "to": "now"},
+    "templating": {"list": []},
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Export at the connection point",
+        "description": "What the substation measures leaving the fleet. When a site goes silent, this says whether it's still producing.",
+        "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [{"refId": "A", "expr": "sum(fleet_active_power_watts{device_type=\"substation\"})"}],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "decimals": 1, "color": {"mode": "fixed", "fixedColor": "text"}},
+          "overrides": []
+        },
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}}
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Grid frequency",
+        "description": "Median of every meter in the fleet. Green inside the 50 mHz standard range, yellow past 50 mHz, orange past 100, red past the 200 mHz maximum steady-state deviation.",
+        "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [{"refId": "A", "expr": "fleet:frequency_hertz:median"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "hertz",
+            "decimals": 3,
+            "noValue": "too few meters",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 49.8},
+                {"color": "yellow", "value": 49.9},
+                {"color": "green", "value": 49.95},
+                {"color": "yellow", "value": 50.05},
+                {"color": "orange", "value": 50.1},
+                {"color": "red", "value": 50.2}
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}}
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Silent devices",
+        "description": "Devices in the inventory the collector hasn't been able to read for a minute. From then on their panels show gaps, not their last values.",
+        "gridPos": {"x": 8, "y": 0, "w": 3, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [{"refId": "A", "expr": "count(device:reachable:bool == 0) or vector(0)"}],
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]
+            }
+          },
+          "overrides": []
+        },
+        "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Alerts firing",
+        "description": "Everything Prometheus has firing, before Alertmanager mutes what a root cause already covers. The pager gets fewer than this, on purpose.",
+        "gridPos": {"x": 11, "y": 0, "w": 5, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count(ALERTS{alertstate=\"firing\", severity=\"critical\"}) or vector(0)",
+            "legendFormat": "critical"
+          },
+          {
+            "refId": "B",
+            "expr": "count(ALERTS{alertstate=\"firing\", severity=\"warning\"}) or vector(0)",
+            "legendFormat": "warning"
+          },
+          {
+            "refId": "C",
+            "expr": "count(ALERTS{alertstate=\"firing\", severity=\"info\"}) or vector(0)",
+            "legendFormat": "info"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"decimals": 0},
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "critical"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "warning"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "info"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [{"color": "green", "value": null}, {"color": "blue", "value": 1}]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "value_and_name",
+          "reduceOptions": {"calcs": ["lastNotNull"]}
+        },
+        "links": [{"title": "Alertmanager", "url": "http://localhost:9093", "targetBlank": true}]
+      },
+      {
+        "id": 5,
+        "type": "gauge",
+        "title": "Battery state of charge",
+        "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_soc_ratio{device_type=\"battery\"}", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 0,
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.1},
+                {"color": "green", "value": 0.2},
+                {"color": "yellow", "value": 0.9}
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "showThresholdMarkers": true}
+      },
+      {
+        "id": 6,
+        "type": "stat",
+        "title": "Battery beyond its schedule",
+        "description": "Output minus setpoint. Mostly frequency response: positive when it holds frequency up, negative when it soaks power up. A trip or a state-of-charge limit shows here too.",
+        "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(fleet_active_power_watts{device_type=\"battery\"} - fleet_power_setpoint_watts{device_type=\"battery\"})"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "decimals": 0, "color": {"mode": "fixed", "fixedColor": "text"}},
+          "overrides": []
+        },
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}}
+      },
+      {
+        "id": 7,
+        "type": "state-timeline",
+        "title": "Unit states",
+        "description": "Green runs, blue is held back by a setpoint, grey is the weather, red is a fault, yellow is planned work. Purple is no data, which says nothing about the unit.",
+        "gridPos": {"x": 0, "y": 4, "w": 24, "h": 7},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "device:state{device_type=\"turbine\"}", "legendFormat": "{{device}}"},
+          {"refId": "B", "expr": "device:state{device_type=\"inverter\"}", "legendFormat": "{{device}}"},
+          {"refId": "C", "expr": "device:state{device_type=\"battery\"}", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {"mode": "absolute", "steps": [{"color": "text", "value": null}]},
+            "custom": {"fillOpacity": 85, "lineWidth": 0}
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byFrameRefID", "options": "A"},
+              "properties": [
+                {
+                  "id": "mappings",
+                  "value": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {"text": "producing", "color": "green", "index": 0},
+                        "2": {"text": "low wind", "color": "#9a9a9a", "index": 1},
+                        "3": {"text": "curtailed", "color": "blue", "index": 2},
+                        "4": {"text": "storm stop", "color": "#6f6f6f", "index": 3},
+                        "5": {"text": "fault", "color": "red", "index": 4},
+                        "6": {"text": "maintenance", "color": "yellow", "index": 5},
+                        "99": {"text": "no data", "color": "purple", "index": 6}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byFrameRefID", "options": "B"},
+              "properties": [
+                {
+                  "id": "mappings",
+                  "value": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {"text": "producing", "color": "green", "index": 0},
+                        "2": {"text": "standby", "color": "#9a9a9a", "index": 1},
+                        "3": {"text": "curtailed", "color": "blue", "index": 2},
+                        "5": {"text": "fault", "color": "red", "index": 3},
+                        "6": {"text": "maintenance", "color": "yellow", "index": 4},
+                        "99": {"text": "no data", "color": "purple", "index": 5}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byFrameRefID", "options": "C"},
+              "properties": [
+                {
+                  "id": "mappings",
+                  "value": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {"text": "charging", "color": "dark-green", "index": 0},
+                        "2": {"text": "discharging", "color": "green", "index": 1},
+                        "3": {"text": "frequency response", "color": "light-green", "index": 2},
+                        "5": {"text": "fault", "color": "red", "index": 3},
+                        "6": {"text": "maintenance", "color": "yellow", "index": 4},
+                        "99": {"text": "no data", "color": "purple", "index": 5}
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "mergeValues": true,
+          "showValue": "auto",
+          "rowHeight": 0.85,
+          "alignValue": "left",
+          "legend": {"showLegend": false}
+        }
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "Generation: possible, expected, actual",
+        "description": "Possible is what the wind and sun allow. Expected is that, held to each unit's power limit. Blue between them is curtailment: energy we were asked not to make. Red between expected and actual is energy lost to faults, stops and underperformance.",
+        "gridPos": {"x": 0, "y": 11, "w": 14, "h": 9},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum((device:available_power_watts < fleet_rated_power_watts) or (fleet_rated_power_watts and on (device) device:available_power_watts))",
+            "legendFormat": "possible"
+          },
+          {"refId": "B", "expr": "sum(device:expected_power_watts)", "legendFormat": "expected"},
+          {
+            "refId": "C",
+            "expr": "sum(fleet_active_power_watts{device_type=~\"turbine|inverter\"})",
+            "legendFormat": "actual"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "min": 0, "custom": {"lineWidth": 1, "fillOpacity": 0}},
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "possible"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}},
+                {"id": "custom.lineWidth", "value": 1},
+                {"id": "custom.fillBelowTo", "value": "expected"},
+                {"id": "custom.fillOpacity", "value": 35}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "expected"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}},
+                {"id": "custom.lineWidth", "value": 1},
+                {"id": "custom.fillBelowTo", "value": "actual"},
+                {"id": "custom.fillOpacity", "value": 35}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "actual"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}},
+                {"id": "custom.lineWidth", "value": 2}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 9,
+        "type": "timeseries",
+        "title": "Output by site",
+        "description": "Stacked by site. The battery goes below zero while it charges. The dashed line is what the substation measures leaving the fleet.",
+        "gridPos": {"x": 14, "y": 11, "w": 10, "h": 9},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (site) (fleet_active_power_watts{device_type=~\"turbine|inverter|battery\"})",
+            "legendFormat": "{{site}}"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(fleet_active_power_watts{device_type=\"substation\"})",
+            "legendFormat": "export"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "watt",
+            "custom": {"lineWidth": 1, "fillOpacity": 40, "stacking": {"mode": "normal", "group": "A"}}
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "export"},
+              "properties": [
+                {"id": "custom.stacking", "value": {"mode": "none"}},
+                {"id": "custom.fillOpacity", "value": 0},
+                {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 10,
+        "type": "timeseries",
+        "title": "Grid frequency",
+        "description": "The fleet median, with every meter faint behind it: one that drifts away from the rest is a bad meter, not the grid. Dashed lines at 50, 100 and 200 mHz off.",
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet:frequency_hertz:median", "legendFormat": "fleet median"},
+          {"refId": "B", "expr": "fleet_frequency_hertz", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "hertz",
+            "decimals": 3,
+            "softMin": 49.85,
+            "softMax": 50.15,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 49.8},
+                {"color": "yellow", "value": 49.9},
+                {"color": "green", "value": 49.95},
+                {"color": "yellow", "value": 50.05},
+                {"color": "orange", "value": 50.1},
+                {"color": "red", "value": 50.2}
+              ]
+            },
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "dashed"}}
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "fleet median"},
+              "properties": [
+                {"id": "custom.lineWidth", "value": 2},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}
+              ]
+            },
+            {
+              "matcher": {"id": "byFrameRefID", "options": "B"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "#808080"}},
+                {"id": "custom.lineWidth", "value": 1},
+                {"id": "custom.hideFrom", "value": {"legend": true, "tooltip": false, "viz": false}}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "Phase voltages",
+        "description": "Every phase of every device in per-unit of its own nominal, so 630 V, 690 V and 110 kV share one axis. Dashed lines at 5% and 10% off.",
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "device:phase_voltage:per_unit", "legendFormat": "{{device}} {{phase}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 3,
+            "softMin": 0.9,
+            "softMax": 1.1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 0.9},
+                {"color": "green", "value": 0.95},
+                {"color": "orange", "value": 1.05},
+                {"color": "red", "value": 1.1}
+              ]
+            },
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "dashed"}}
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "right"}, "tooltip": {"mode": "single"}}
+      },
+      {
+        "id": 12,
+        "type": "timeseries",
+        "title": "Transformer oil",
+        "description": "Top oil against what the thermal model expects for its recent peak load. Actual well above expected is cooling trouble, whatever the temperature. Dashed lines at the 85 and 95 °C alarms.",
+        "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_oil_temperature_celsius", "legendFormat": "top oil {{device}}"},
+          {
+            "refId": "B",
+            "expr": "device:top_oil_rise_kelvin:expected + fleet_ambient_temperature_celsius",
+            "legendFormat": "expected for its load"
+          },
+          {"refId": "C", "expr": "fleet_ambient_temperature_celsius", "legendFormat": "outdoor"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "decimals": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "orange", "value": 85},
+                {"color": "red", "value": 95}
+              ]
+            },
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "dashed"}}
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "expected for its load"},
+              "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}}]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 13,
+        "type": "timeseries",
+        "title": "Battery cells",
+        "description": "Hottest cell. With working cooling it levels off; climbing above 35 °C while charging is the critical alert. Dashed lines at 45 °C and the 55 °C BMS trip.",
+        "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_cell_temperature_celsius", "legendFormat": "hottest cell {{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "decimals": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "orange", "value": 45},
+                {"color": "red", "value": 55}
+              ]
+            },
+            "custom": {"lineWidth": 2, "thresholdsStyle": {"mode": "dashed"}}
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      }
+    ]
+  }

@@ -7,13 +7,14 @@ generic.
 
 ## Quick start
 
-    cp .env.example .env
+    cp .env.example .env                # then set GRAFANA_ADMIN_PASSWORD
     docker compose run --rm unit-tests
     ./scripts/check.sh                  # validate configuration with the pinned tools
     docker compose up -d
     ./scripts/check-segmentation.sh     # prove what each network can and can't reach
     docker compose run --rm ot-workstation dump wt-01
 
+- Grafana: http://localhost:3000 (admin, and the password from `.env`), opens on the fleet overview
 - Prometheus: http://localhost:9090 (the `collector` target should be UP)
 - Alertmanager: http://localhost:9093
 - Notifications: `docker compose logs -f webhook-logger`
@@ -38,11 +39,28 @@ changes conditions in the simulated world.
 | `ot` | the devices, `modbus-gateway` | Field devices. Internal, no route out |
 | `ot-dmz` | `modbus-gateway`, `collector` | Conduit from OT to the DMZ. The gateway passes Modbus reads only |
 | `dmz-it` | `collector`, `prometheus` | Conduit from the DMZ to IT. Carries the collector's metrics endpoint, nothing else |
-| `it` | `prometheus`, `alertmanager`, `webhook-logger` | The IT side, where the UIs and alerting live. The only network with ports published to the host |
+| `it` | `prometheus`, `alertmanager`, `grafana`, `webhook-logger` | The IT side, where the UIs and alerting live. The only network with ports published to the host |
 
 Three services sit on two networks: the gateway, the collector and Prometheus. None of them
 routes traffic between its networks; each only speaks its own protocol to the next zone.
 `scripts/check-segmentation.sh` tests every path from inside each network.
+
+## Dashboards
+
+The **fleet overview** is the screen for the control room: export at the connection point, grid
+frequency, silent devices, alerts, the battery, then every unit's state, generation, the grid and
+heat underneath.
+
+- **Silence is a state of its own.** A unit that stops answering turns purple, "no data", instead
+  of leaving a gap or freezing on its last state. It never shows as 0 MW or as a fault.
+- **Colours follow cause.** Green runs, blue is held back by a setpoint, grey is the weather, red is
+  a fault, yellow is planned work. Curtailment is never red.
+- **Possible, expected, actual.** One panel stacks what the weather allows, what the setpoints
+  allow and what the fleet makes. Blue between the first two is curtailment, red between the last
+  two is lost energy.
+
+`tests/test_dashboards.py` fails if a panel queries a metric nobody collects or records, or if a
+state in the register map has no colour.
 
 ## Alerts
 
@@ -136,6 +154,7 @@ while charging, where working cooling would have levelled them off.
     alertmanager/   routing and inhibition, and their tests
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
     docs/           runbook
+    grafana/        provisioning and dashboards
     prometheus/     Prometheus config, alert rules and their unit tests
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
