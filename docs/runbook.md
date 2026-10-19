@@ -210,7 +210,7 @@ filter them out.
    low, charging more when it's high. The gap is
    `fleet_active_power_watts{device="bess-01"} - fleet_power_setpoint_watts{device="bess-01"}`.
    A battery sitting exactly on its setpoint during a deviation isn't delivering the reserve it's
-   paid for.
+   paid for. The battery dashboard draws it as "asked and delivered".
 2. Its state of charge, `fleet_soc_ratio{device="bess-01"}`. A long low-frequency event drains
    it, a long high one fills it.
 3. Output elsewhere. Above the LFSM-O threshold (set nationally, between 50.2 and 50.5 Hz),
@@ -273,7 +273,8 @@ it discharging a quarter of its reserve into a grid that didn't ask for it. 20 m
    meter's calibration, a reading that jumps around at the voltage measurement it's derived from.
 2. If it's the battery, look at the gap between its output and its setpoint
    (`fleet_active_power_watts - fleet_power_setpoint_watts`). Frequency response on a wrong
-   reading shows as a steady gap while nothing is happening on the grid.
+   reading shows as a steady gap while nothing is happening on the grid. On the battery
+   dashboard, "delivered" leaves "asked by the grid" and its meter leaves the fleet median.
 3. Was the device replaced, re-flashed or reconfigured recently?
 
 **Likely causes:** meter calibration drift, a faulty voltage transformer or its wiring, a firmware
@@ -370,7 +371,9 @@ if it's still firing.
 1. Its neighbours, in the same wind. `device:performance:ratio_10m{site="wind-a"}` and
    `fleet_wind_speed_meters_per_second{site="wind-a"}`. One turbine low while the others are fine
    is the turbine. All of them low together points at something shared (the weather, the curve,
-   the site's power limit), not three turbines failing at once.
+   the site's power limit), not three turbines failing at once. The wind park dashboard puts
+   them side by side, and its power curve shows where the points fall: on the curve, flat under
+   it (a limit), or scattered under it (a loss).
 2. Its wind reading against theirs. A turbine reporting much more wind than its neighbours while
    making the same power has an anemometer reading high, and the turbine itself is fine.
 3. The weather. Below zero and humid means ice.
@@ -404,7 +407,8 @@ if it's still firing.
 **Check first**
 1. The other inverter at the site. They share a pyranometer, so both low together, in the same
    light, points at the pyranometer or the weather (snow), not at two inverters failing at once.
-   One alone is that inverter's part of the array.
+   One alone is that inverter's part of the array. The solar park dashboard plots each inverter
+   against the irradiance: lost strings show as a lower slope under the curve.
 2. In winter: snow or frost on the modules while the pyranometer has cleared.
 3. Its power limit, `fleet_power_limit_ratio{device="<device>"}`. Already in the expected figure,
    but worth knowing if someone changed it.

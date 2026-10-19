@@ -59,8 +59,19 @@ heat underneath.
   allow and what the fleet makes. Blue between the first two is curtailment, red between the last
   two is lost energy.
 
-`tests/test_dashboards.py` fails if a panel queries a metric nobody collects or records, or if a
-state in the register map has no colour.
+Click a unit on the overview's state timeline to drill down to its site:
+
+- **Wind park:** the power curve, every turbine's output against its own anemometer on top of the
+  curve the alerts expect. On the curve is healthy, flat under it is a power limit, a cloud under
+  it is a loss. Plus each turbine's wind, 10-minute performance and power limit.
+- **Solar park:** the same for inverters, against the park's pyranometer, flat at the rating
+  where they clip.
+- **Battery:** the schedule against the output, and the frequency response the grid asks for
+  against what the battery delivers. A bad meter shows as the two coming apart.
+
+`tests/test_dashboards.py` fails if a panel queries a metric nobody collects or records, if a
+state in the register map has no colour, if a drawn curve isn't the one the alerts use, or if a
+link points at a dashboard that doesn't exist.
 
 ## Alerts
 

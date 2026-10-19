@@ -1,0 +1,240 @@
+{
+    "uid": "battery",
+    "title": "Battery",
+    "description": "The battery: its schedule against what it delivers, the frequency response the grid asks for, charge and heat.",
+    "tags": ["fleet", "battery"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": false,
+    "refresh": "10s",
+    "time": {"from": "now-3h", "to": "now"},
+    "templating": {
+      "list": [
+        {
+          "name": "site",
+          "label": "Site",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "definition": "label_values(fleet_soc_ratio, site)",
+          "query": {"query": "label_values(fleet_soc_ratio, site)", "refId": "site"},
+          "refresh": 2,
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {}
+        }
+      ]
+    },
+    "links": [
+      {
+        "title": "Fleet dashboards",
+        "type": "dashboards",
+        "tags": ["fleet"],
+        "asDropdown": true,
+        "keepTime": true,
+        "includeVars": false
+      }
+    ],
+    "panels": [
+      {
+        "id": 1,
+        "type": "state-timeline",
+        "title": "Battery state",
+        "description": "Green runs, blue is held back by a setpoint, grey is the weather, red is a fault, yellow is planned work. Purple is no data, which says nothing about the unit.",
+        "gridPos": {"x": 0, "y": 0, "w": 24, "h": 4},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "device:state{site=\"$site\", device_type=\"battery\"}",
+            "legendFormat": "{{device}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "fixed", "fixedColor": "text"},
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "1": {"text": "charging", "color": "dark-green", "index": 0},
+                  "2": {"text": "discharging", "color": "green", "index": 1},
+                  "3": {"text": "frequency response", "color": "light-green", "index": 2},
+                  "5": {"text": "fault", "color": "red", "index": 3},
+                  "6": {"text": "maintenance", "color": "yellow", "index": 4},
+                  "99": {"text": "no data", "color": "purple", "index": 5}
+                }
+              }
+            ],
+            "custom": {"fillOpacity": 85, "lineWidth": 0}
+          },
+          "overrides": []
+        },
+        "options": {
+          "mergeValues": true,
+          "showValue": "auto",
+          "rowHeight": 0.85,
+          "alignValue": "left",
+          "legend": {"showLegend": false}
+        }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Schedule against output",
+        "description": "The setpoint is what the trading schedule asks for. The gap to the output is the battery acting on its own: frequency response, or a full or empty battery holding back, or a trip.",
+        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 9},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_power_setpoint_watts{site=\"$site\"}", "legendFormat": "setpoint"},
+          {
+            "refId": "B",
+            "expr": "fleet_active_power_watts{site=\"$site\", device_type=\"battery\"}",
+            "legendFormat": "output"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "custom": {"lineWidth": 1}},
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "setpoint"},
+              "properties": [
+                {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}},
+                {"id": "custom.lineInterpolation", "value": "stepAfter"},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "output"},
+              "properties": [
+                {"id": "custom.lineWidth", "value": 2},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Frequency response: asked and delivered",
+        "description": "Asked is what the grid's frequency calls for from the battery's 1 MW reserve, full at 200 mHz off. Delivered is output minus setpoint. They should track each other. Delivered following something the grid isn't doing is a bad meter; delivered flat while frequency moves is reserve not delivered.",
+        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 9},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "-1000000 * clamp((fleet:frequency_hertz:median - 50) / 0.2, -1, 1)",
+            "legendFormat": "asked by the grid"
+          },
+          {
+            "refId": "B",
+            "expr": "fleet_active_power_watts{site=\"$site\", device_type=\"battery\"} - fleet_power_setpoint_watts{site=\"$site\"}",
+            "legendFormat": "delivered"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "custom": {"lineWidth": 1}},
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "asked by the grid"},
+              "properties": [
+                {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "delivered"},
+              "properties": [
+                {"id": "custom.lineWidth", "value": 2},
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "State of charge",
+        "description": "The battery stops charging at 95% and discharging at 5%, so its frequency response keeps room both ways.",
+        "gridPos": {"x": 0, "y": 13, "w": 8, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [{"refId": "A", "expr": "fleet_soc_ratio{site=\"$site\"}", "legendFormat": "{{device}}"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": {"lineWidth": 2, "thresholdsStyle": {"mode": "dashed"}},
+            "decimals": 0,
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "transparent", "value": null},
+                {"color": "red", "value": 0.05},
+                {"color": "red", "value": 0.95}
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Cell temperature",
+        "description": "Hottest cell. Dashed lines at 35 °C, where climbing while charging becomes critical, 45 °C and the 55 °C BMS trip.",
+        "gridPos": {"x": 8, "y": 13, "w": 8, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_cell_temperature_celsius{site=\"$site\"}", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "custom": {"lineWidth": 2, "thresholdsStyle": {"mode": "dashed"}},
+            "decimals": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 35},
+                {"color": "orange", "value": 45},
+                {"color": "red", "value": 55}
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Its meter against the fleet",
+        "description": "The battery responds to its own meter. If its line leaves the fleet median, it's responding to a grid that isn't there.",
+        "gridPos": {"x": 16, "y": 13, "w": 8, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet:frequency_hertz:median", "legendFormat": "fleet median"},
+          {"refId": "B", "expr": "fleet_frequency_hertz{site=\"$site\"}", "legendFormat": "battery meter"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "hertz",
+            "custom": {"lineWidth": 1},
+            "decimals": 3,
+            "softMin": 49.9,
+            "softMax": 50.1
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      }
+    ]
+  }

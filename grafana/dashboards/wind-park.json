@@ -1,0 +1,288 @@
+{
+    "uid": "wind-park",
+    "title": "Wind park",
+    "description": "One wind park: its turbines' states, the power curve, and what the wind gave against what they made.",
+    "tags": ["fleet", "wind"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": false,
+    "refresh": "10s",
+    "time": {"from": "now-3h", "to": "now"},
+    "templating": {
+      "list": [
+        {
+          "name": "site",
+          "label": "Site",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "definition": "label_values(fleet_wind_speed_meters_per_second, site)",
+          "query": {"query": "label_values(fleet_wind_speed_meters_per_second, site)", "refId": "site"},
+          "refresh": 2,
+          "includeAll": false,
+          "multi": false,
+          "sort": 1,
+          "current": {}
+        }
+      ]
+    },
+    "links": [
+      {
+        "title": "Fleet dashboards",
+        "type": "dashboards",
+        "tags": ["fleet"],
+        "asDropdown": true,
+        "keepTime": true,
+        "includeVars": false
+      }
+    ],
+    "panels": [
+      {
+        "id": 1,
+        "type": "state-timeline",
+        "title": "Turbine states",
+        "description": "Green runs, blue is held back by a setpoint, grey is the weather, red is a fault, yellow is planned work. Purple is no data, which says nothing about the unit.",
+        "gridPos": {"x": 0, "y": 0, "w": 24, "h": 5},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "device:state{site=\"$site\", device_type=\"turbine\"}",
+            "legendFormat": "{{device}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "fixed", "fixedColor": "text"},
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "1": {"text": "producing", "color": "green", "index": 0},
+                  "2": {"text": "low wind", "color": "#9a9a9a", "index": 1},
+                  "3": {"text": "curtailed", "color": "blue", "index": 2},
+                  "4": {"text": "storm stop", "color": "#6f6f6f", "index": 3},
+                  "5": {"text": "fault", "color": "red", "index": 4},
+                  "6": {"text": "maintenance", "color": "yellow", "index": 5},
+                  "99": {"text": "no data", "color": "purple", "index": 6}
+                }
+              }
+            ],
+            "custom": {"fillOpacity": 85, "lineWidth": 0}
+          },
+          "overrides": []
+        },
+        "options": {
+          "mergeValues": true,
+          "showValue": "auto",
+          "rowHeight": 0.85,
+          "alignValue": "left",
+          "legend": {"showLegend": false}
+        }
+      },
+      {
+        "id": 2,
+        "type": "xychart",
+        "pluginVersion": "12.1.0",
+        "title": "Power curve",
+        "description": "Each turbine's output against its own anemometer, on top of the curve the alerts expect (grey). On the curve is healthy. A flat line under it is a power limit. A cloud under it is lost energy: ice, pitch, or an anemometer reading high.",
+        "gridPos": {"x": 0, "y": 5, "w": 12, "h": 10},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "label_replace(fleet_wind_speed_meters_per_second{site=\"$site\"}, \"quantity\", \"wind\", \"\", \"\")\nor label_replace(fleet_active_power_watts{site=\"$site\", device_type=\"turbine\"}, \"quantity\", \"power\", \"\", \"\")\nor label_replace(\n  clamp((fleet_wind_speed_meters_per_second{site=\"$site\"} ^ 3 - 3 ^ 3) / (12 ^ 3 - 3 ^ 3), 0, 1)\n  * (fleet_wind_speed_meters_per_second{site=\"$site\"} < bool 25)\n  * fleet_rated_power_watts{site=\"$site\"},\n  \"quantity\", \"curve\", \"\", \"\")",
+            "range": true,
+            "instant": false
+          }
+        ],
+        "transformations": [
+          {"id": "joinByLabels", "options": {"value": "quantity", "join": ["device"]}},
+          {"id": "partitionByValues", "options": {"fields": ["device"], "keepFields": false}}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "watt",
+            "min": 0,
+            "custom": {"show": "points", "pointSize": {"fixed": 4}, "fillOpacity": 50}
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "wind"},
+              "properties": [{"id": "unit", "value": "velocityms"}]
+            },
+            {
+              "matcher": {"id": "byName", "options": "curve"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "#808080"}},
+                {"id": "custom.pointSize", "value": {"fixed": 2}},
+                {"id": "custom.hideFrom", "value": {"legend": true, "tooltip": false, "viz": false}}
+              ]
+            }
+          ]
+        },
+        "options": {
+          "mapping": "auto",
+          "series": [{"x": {"matcher": {"id": "byName", "options": "wind"}}}],
+          "legend": {"showLegend": true, "displayMode": "list", "placement": "bottom"},
+          "tooltip": {"mode": "single"}
+        }
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Site output: possible, expected, actual",
+        "description": "The same split as on the fleet overview, for this site. Blue between possible and expected is curtailment, red between expected and actual is lost energy.",
+        "gridPos": {"x": 12, "y": 5, "w": 12, "h": 10},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum((device:available_power_watts{site=\"$site\"} < fleet_rated_power_watts) or (fleet_rated_power_watts{site=\"$site\"} and on (device) device:available_power_watts))",
+            "legendFormat": "possible"
+          },
+          {"refId": "B", "expr": "sum(device:expected_power_watts{site=\"$site\"})", "legendFormat": "expected"},
+          {
+            "refId": "C",
+            "expr": "sum(fleet_active_power_watts{site=\"$site\", device_type=\"turbine\"})",
+            "legendFormat": "actual"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "watt", "min": 0, "custom": {"lineWidth": 1, "fillOpacity": 0}},
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "possible"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}},
+                {"id": "custom.lineWidth", "value": 1},
+                {"id": "custom.fillBelowTo", "value": "expected"},
+                {"id": "custom.fillOpacity", "value": 35}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "expected"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}},
+                {"id": "custom.lineWidth", "value": 1},
+                {"id": "custom.fillBelowTo", "value": "actual"},
+                {"id": "custom.fillOpacity", "value": 35}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "actual"},
+              "properties": [
+                {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}},
+                {"id": "custom.lineWidth", "value": 2}
+              ]
+            }
+          ]
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "Performance, 10 minute average",
+        "description": "Actual over expected output. The underperformance alert fires under the red line. Gaps are on purpose: a unit is only judged after running a full 10 minutes and when it should be making at least a tenth of its rating.",
+        "gridPos": {"x": 0, "y": 15, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "device:performance:ratio_10m{site=\"$site\"}", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 0,
+            "softMin": 0.5,
+            "softMax": 1.1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 0.8}]
+            },
+            "custom": {"lineWidth": 2, "thresholdsStyle": {"mode": "dashed"}}
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Wind at each turbine",
+        "description": "Turbines in one park see nearly the same wind. One reading well above its neighbours while making the same power has an anemometer reading high, not a turbine making too little.",
+        "gridPos": {"x": 12, "y": 15, "w": 12, "h": 8},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "fleet_wind_speed_meters_per_second{site=\"$site\"}",
+            "legendFormat": "{{device}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "velocityms", "custom": {"lineWidth": 1}, "min": 0},
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Power limits",
+        "description": "The setpoint each unit was given, as a share of its rating. 100% means no limit.",
+        "gridPos": {"x": 0, "y": 23, "w": 12, "h": 7},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {"refId": "A", "expr": "fleet_power_limit_ratio{site=\"$site\"}", "legendFormat": "{{device}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 0,
+            "min": 0,
+            "max": 1,
+            "custom": {"lineWidth": 2, "lineInterpolation": "stepAfter"}
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 7,
+        "type": "timeseries",
+        "title": "Phase voltages",
+        "description": "Voltage is local: one unit off on one phase is that unit's connection, the whole site off together is its feeder or the grid. Shading marks 5% and 10% off.",
+        "gridPos": {"x": 12, "y": 23, "w": 12, "h": 7},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "device:phase_voltage:per_unit{site=\"$site\"}",
+            "legendFormat": "{{device}} {{phase}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 3,
+            "softMin": 0.9,
+            "softMax": 1.1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 0.9},
+                {"color": "green", "value": 0.95},
+                {"color": "orange", "value": 1.05},
+                {"color": "red", "value": 1.1}
+              ]
+            },
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "area"}}
+          },
+          "overrides": []
+        },
+        "options": {"legend": {"displayMode": "list", "placement": "right"}, "tooltip": {"mode": "single"}}
+      }
+    ]
+  }

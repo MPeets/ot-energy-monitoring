@@ -10,6 +10,16 @@
     "refresh": "10s",
     "time": {"from": "now-3h", "to": "now"},
     "templating": {"list": []},
+    "links": [
+      {
+        "title": "Fleet dashboards",
+        "type": "dashboards",
+        "tags": ["fleet"],
+        "asDropdown": true,
+        "keepTime": true,
+        "includeVars": false
+      }
+    ],
     "panels": [
       {
         "id": 1,
@@ -210,8 +220,7 @@
         ],
         "fieldConfig": {
           "defaults": {
-            "color": {"mode": "thresholds"},
-            "thresholds": {"mode": "absolute", "steps": [{"color": "text", "value": null}]},
+            "color": {"mode": "fixed", "fixedColor": "text"},
             "custom": {"fillOpacity": 85, "lineWidth": 0}
           },
           "overrides": [
@@ -232,6 +241,15 @@
                         "6": {"text": "maintenance", "color": "yellow", "index": 5},
                         "99": {"text": "no data", "color": "purple", "index": 6}
                       }
+                    }
+                  ]
+                },
+                {
+                  "id": "links",
+                  "value": [
+                    {
+                      "title": "Open ${__field.labels.site}",
+                      "url": "/d/wind-park?var-site=${__field.labels.site}&${__url_time_range}"
                     }
                   ]
                 }
@@ -255,6 +273,15 @@
                       }
                     }
                   ]
+                },
+                {
+                  "id": "links",
+                  "value": [
+                    {
+                      "title": "Open ${__field.labels.site}",
+                      "url": "/d/solar-park?var-site=${__field.labels.site}&${__url_time_range}"
+                    }
+                  ]
                 }
               ]
             },
@@ -274,6 +301,15 @@
                         "6": {"text": "maintenance", "color": "yellow", "index": 4},
                         "99": {"text": "no data", "color": "purple", "index": 5}
                       }
+                    }
+                  ]
+                },
+                {
+                  "id": "links",
+                  "value": [
+                    {
+                      "title": "Open ${__field.labels.site}",
+                      "url": "/d/battery?var-site=${__field.labels.site}&${__url_time_range}"
                     }
                   ]
                 }
@@ -383,7 +419,7 @@
         "id": 10,
         "type": "timeseries",
         "title": "Grid frequency",
-        "description": "The fleet median, with every meter faint behind it: one that drifts away from the rest is a bad meter, not the grid. Dashed lines at 50, 100 and 200 mHz off.",
+        "description": "The fleet median, with every meter faint behind it: one that drifts away from the rest is a bad meter, not the grid. Shading marks 50, 100 and 200 mHz off.",
         "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
         "datasource": {"type": "prometheus", "uid": "prometheus"},
         "targets": [
@@ -408,7 +444,7 @@
                 {"color": "red", "value": 50.2}
               ]
             },
-            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "dashed"}}
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "area"}}
           },
           "overrides": [
             {
@@ -434,7 +470,7 @@
         "id": 11,
         "type": "timeseries",
         "title": "Phase voltages",
-        "description": "Every phase of every device in per-unit of its own nominal, so 630 V, 690 V and 110 kV share one axis. Dashed lines at 5% and 10% off.",
+        "description": "Every phase of every device in per-unit of its own nominal, so 630 V, 690 V and 110 kV share one axis. Shading marks 5% and 10% off.",
         "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
         "datasource": {"type": "prometheus", "uid": "prometheus"},
         "targets": [
@@ -456,7 +492,7 @@
                 {"color": "red", "value": 1.1}
               ]
             },
-            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "dashed"}}
+            "custom": {"lineWidth": 1, "thresholdsStyle": {"mode": "area"}}
           },
           "overrides": []
         },
