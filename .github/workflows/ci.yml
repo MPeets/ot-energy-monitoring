@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only token: CI never needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Throwaway value for CI only. Real installs set it in .env.
+  GRAFANA_ADMIN_PASSWORD: ci-only-not-a-secret
+
+jobs:
+  validate:
+    name: Unit tests, configuration and scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Third-party actions pinned to a full commit SHA, not a movable tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Scripts are executable
+        # Windows doesn't record the execute bit, so a script added from there
+        # needs git add --chmod=+x
+        run: |
+          git ls-files -s 'scripts/*.sh' |
+            awk '$1 != "100755" { print "not executable: " $4; bad = 1 } END { exit bad }'
+
+      - name: Unit tests
+        # Simulator, gateway, collector config, and the contracts between the
+        # rules, dashboards, scenarios, bundle and CI. In the pinned Python
+        # image, with no network.
+        run: docker compose run --rm -T unit-tests
+
+      - name: Prometheus config, rule unit tests, Alertmanager routing and inhibition, runbook links
+        run: ./scripts/check.sh
+
+  lab:
+    name: The running lab, end to end
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the lab
+        run: |
+          cp .env.example .env
+          docker compose up -d
+
+      - name: Smoke test
+        # Every device answers, alerts reach their receivers, and an injected
+        # fault arrives and clears. About eight minutes.
+        run: ./scripts/smoke-test.sh
+
+      - name: Network segmentation
+        run: ./scripts/check-segmentation.sh
+
+      - name: Scenario script
+        # Pause, status and reset against a real Docker, then the lab is back to normal
+        run: |
+          ./scripts/scenario.sh site-silent
+          ./scripts/scenario.sh status | grep -x '  wt-01'
+          ./scripts/scenario.sh reset
+          test -z "$(docker compose ps --services --status paused)"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 100
+
+  offline-install:
+    name: Offline bundle and air-gapped install
+    needs: validate
+    # Heavy (about half a gigabyte of images), so on main and on demand
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build bundle
+        run: ./scripts/bundle.sh
+
+      - name: Simulate the air gap
+        run: |
+          # Remove every image so the bundle is the only source, then make the
+          # common registries unresolvable so any pull attempt fails loudly.
+          docker image prune -af
+          for host in registry-1.docker.io index.docker.io docker.io auth.docker.io quay.io ghcr.io; do
+            echo "0.0.0.0 $host" | sudo tee -a /etc/hosts > /dev/null
+          done
+          if docker pull -q busybox:latest; then
+            echo "Registry still reachable, air gap simulation failed"; exit 1
+          fi
+          echo "Registries unreachable, as on an air-gapped host"
+
+      - name: Install from bundle
+        run: |
+          mkdir -p /tmp/airgap && cd /tmp/airgap
+          cp "$GITHUB_WORKSPACE"/dist/ot-energy-monitoring-*.tar* .
+          sha256sum -c ot-energy-monitoring-*.tar.sha256
+          tar -xf ot-energy-monitoring-*.tar
+          cd ot-energy-monitoring-*/
+          cp repo/.env.example repo/.env
+          sed -i "s/^GRAFANA_ADMIN_PASSWORD=.*/GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD/" repo/.env
+          ./install.sh
+
+      - name: Smoke test and segmentation on the offline install
+        run: |
+          cd /tmp/airgap/ot-energy-monitoring-*/repo
+          ./scripts/smoke-test.sh
+          ./scripts/check-segmentation.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: cd /tmp/airgap/ot-energy-monitoring-*/repo && docker compose logs --no-color --tail 100
+
+      - name: Keep the bundle's checksums and image manifest
+        if: always()
+        run: |
+          mkdir -p evidence
+          tar -xOf dist/ot-energy-monitoring-*.tar --wildcards '*/SHA256SUMS' > evidence/SHA256SUMS || true
+          tar -xOf dist/ot-energy-monitoring-*.tar --wildcards '*/images/manifest.txt' > evidence/image-manifest.txt || true
+          cp dist/*.sha256 evidence/ || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: bundle-evidence
+          path: evidence/

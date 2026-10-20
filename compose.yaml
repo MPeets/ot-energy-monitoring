@@ -248,6 +248,7 @@ services:
       - ./scripts:/app/scripts:ro
       - ./compose.yaml:/app/compose.yaml:ro
       - ./.env.example:/app/.env.example:ro
+      - ./.github:/app/.github:ro
     network_mode: none
     restart: "no"
 

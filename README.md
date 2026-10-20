@@ -1,3 +1,5 @@
+![CI](https://github.com/MPeets/ot-energy-monitoring/actions/workflows/ci.yml/badge.svg)
+
 # ot-energy-monitoring
 
 A small generation fleet simulated in containers (wind turbines, solar inverters, a battery
@@ -213,8 +215,23 @@ would otherwise fail its check on a Linux server that uses the classic store. `t
 keeps every image pinned to the version in `.env.example`, which is where the bundle takes its
 versions from.
 
+## CI
+
+GitHub Actions runs three jobs:
+
+| Job | What it runs | When |
+|---|---|---|
+| Unit tests, configuration and scripts | shellcheck, a check that every script is executable, the unit tests in the pinned Python image with no network, and `./scripts/check.sh` | every push and pull request |
+| The running lab, end to end | the whole lab, then `./scripts/smoke-test.sh`, `./scripts/check-segmentation.sh` and the scenario script against a real Docker | every push and pull request |
+| Offline bundle and air-gapped install | `./scripts/bundle.sh`, then every image deleted and the registries blocked, then `install.sh`, and the smoke test and segmentation check again on the installed copy | main and manual runs |
+
+Actions are pinned to commit SHAs, the token is read-only, and Dependabot proposes updates to the
+pins. `tests/test_ci.py` fails if an action isn't pinned, or if CI stops running one of the lab's
+scripts.
+
 ## Layout
 
+    .github/        CI workflow and Dependabot
     alertmanager/   routing and inhibition, and their tests
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
     docs/           runbook

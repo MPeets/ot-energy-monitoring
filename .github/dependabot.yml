@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # The actions are pinned to commit SHAs, which never move on their own.
+  # Dependabot opens a pull request for each new release, with the SHA and the
+  # version comment updated together, and CI runs on it like any other change.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
