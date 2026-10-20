@@ -188,6 +188,31 @@ every alert and receiver it promises exists.
 - the dashboards are provisioned
 - an insulation fault on an inverter reaches the shift, pages nobody, and its all-clear follows
 
+## Offline install
+
+On a machine with internet access, from a clean commit:
+
+    ./scripts/bundle.sh
+
+Carry `dist/ot-energy-monitoring-<commit>.tar` and its `.sha256` file across, then on the offline
+host:
+
+    sha256sum -c ot-energy-monitoring-<commit>.tar.sha256
+    tar -xf ot-energy-monitoring-<commit>.tar
+    cd ot-energy-monitoring-<commit>
+    ./install.sh
+
+The installer checks every file against its checksum and refuses a bundle built for another
+platform. It loads the images and checks each one against the manifest, validates the
+configuration, and starts the lab without pulling anything. A newer bundle installs over an older
+one the same way, and the data volumes carry over.
+
+Images are checked by their platform and filesystem layers, not by image ID. Docker's classic and
+containerd image stores give the same image different IDs, so a bundle built on Docker Desktop
+would otherwise fail its check on a Linux server that uses the classic store. `tests/test_bundle.py`
+keeps every image pinned to the version in `.env.example`, which is where the bundle takes its
+versions from.
+
 ## Layout
 
     alertmanager/   routing and inhibition, and their tests
@@ -197,7 +222,7 @@ every alert and receiver it promises exists.
     prometheus/     Prometheus config, alert rules and their unit tests
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
     scenarios/      files that inject conditions into the simulated world (faults, grid events)
-    scripts/        helper scripts
+    scripts/        checks, smoke test, scenarios, collector config, offline bundle and installer
     tests/          unit tests
     tools/          webhook-logger, the lab's stand-in for a pager
     inventory.toml  the asset list: every device, its site and the unit id it's reached by

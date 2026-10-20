@@ -246,6 +246,8 @@ services:
       - ./alertmanager:/app/alertmanager:ro
       - ./scenarios:/app/scenarios:ro
       - ./scripts:/app/scripts:ro
+      - ./compose.yaml:/app/compose.yaml:ro
+      - ./.env.example:/app/.env.example:ro
     network_mode: none
     restart: "no"
 
