@@ -11,6 +11,7 @@ generic.
     docker compose run --rm unit-tests
     ./scripts/check.sh                  # validate configuration with the pinned tools
     docker compose up -d
+    ./scripts/smoke-test.sh             # end to end, from a device fault to the receiver and back
     ./scripts/check-segmentation.sh     # prove what each network can and can't reach
     docker compose run --rm ot-workstation dump wt-01
 
@@ -159,6 +160,33 @@ number gets there. The transformer's expected oil rise comes from the IEC 60076-
 its highest recent load, so failed fans show up on a winter night with the oil at 50 °C, long
 before any alarm setting would. The battery alert watches the trend: cells that keep climbing
 while charging, where working cooling would have levelled them off.
+
+## Scenarios
+
+`scripts/scenario.sh` plays out incidents on the running lab and says what should happen next:
+which alerts, who hears about them, and roughly when.
+
+    ./scripts/scenario.sh               # list them
+    ./scripts/scenario.sh grid-trip     # start one
+    ./scripts/scenario.sh status        # what's in effect right now
+    ./scripts/scenario.sh reset         # everything back to normal
+    docker compose logs -f webhook-logger | grep -v watchdog
+
+Some are there for what doesn't happen: a turbine tripped by the grid pages once, for the
+voltage, not again for the turbine. A curtailed park sends nothing at all. A failed transformer
+fan is caught with the oil still far from any temperature alarm. `tests/test_scenarios.py` keeps
+the script honest: every key it writes is one the device accepts, every setpoint is writable, and
+every alert and receiver it promises exists.
+
+## Smoke test
+
+`scripts/smoke-test.sh` checks the running lab end to end, in about eight minutes:
+
+- every device in the inventory answers, and every rule evaluates
+- Prometheus has an Alertmanager to send to. Without one, alerts fire in Prometheus and go nowhere
+- the Watchdog reaches its receiver, and nothing else fires on a healthy fleet
+- the dashboards are provisioned
+- an insulation fault on an inverter reaches the shift, pages nobody, and its all-clear follows
 
 ## Layout
 

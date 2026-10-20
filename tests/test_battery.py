@@ -68,6 +68,14 @@ class ScheduleTest(unittest.TestCase):
         self.assertGreaterEqual(bank.get("active_power"), 0)
         self.assertEqual(bank.get("state"), FREQUENCY_RESPONSE)
 
+    def test_a_scenario_can_hold_the_charge_so_a_full_battery_still_charges(self):
+        device, bank = make_battery()
+        device.stored_kwh = device.CAPACITY_KWH * SOC_MAX / 100
+        run_for(device, NIGHT, 600, power_kw=-5000, soc=50)
+        self.assertEqual(bank.get("state"), CHARGING)
+        self.assertLess(bank.get("active_power"), -4000)  # frequency response rides on top
+        self.assertAlmostEqual(bank.get("soc"), 50, delta=0.1)
+
     def test_fault_and_maintenance(self):
         device, bank = make_battery()
         device.update(MIDDAY, Scenario(device={"fault": True}))

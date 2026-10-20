@@ -53,6 +53,7 @@ class Battery(Device):
     SCENARIO_KEYS = {
         **Device.SCENARIO_KEYS,
         "power_kw": number,       # override the schedule, negative charges, e.g. -5000
+        "soc": number,            # hold the state of charge at this %, e.g. 50
         "cooling_failure": flag,  # container HVAC stops
         "fault": flag,            # tripped on a fault
         "maintenance": flag,      # stopped for planned work
@@ -72,6 +73,10 @@ class Battery(Device):
         conditions = scenario.device
         dt = 1.0 if self.last_update is None else min(max(now - self.last_update, 0.0), 10.0)
         self.last_update = now
+        if "soc" in conditions:
+            # Held where the scenario says, so a test of charging doesn't depend on
+            # how full the battery happens to be when it starts
+            self.stored_kwh = min(max(conditions["soc"], 0.0), 100.0) / 100 * self.CAPACITY_KWH
         soc = 100 * self.stored_kwh / self.CAPACITY_KWH
 
         if self.cell_c >= BMS_TRIP_C:

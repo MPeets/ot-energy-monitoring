@@ -1,8 +1,14 @@
 # Scenarios
 
-Files here change the simulated physical world. Every device re-reads them once a second, and
-deleting a file puts things back to normal. The folder is mounted read-only into the devices,
-and the `*.json` files are gitignored.
+For whole incidents, with what should happen and when, use the script:
+
+    ./scripts/scenario.sh              # list them
+    ./scripts/scenario.sh grid-trip    # start one
+    ./scripts/scenario.sh reset        # everything back to normal
+
+This page is the raw interface the script builds on. Files here change the simulated physical
+world. Every device re-reads them once a second, and deleting a file puts things back to normal.
+The folder is mounted read-only into the devices, and the `*.json` files are gitignored.
 
 | File | Applies to |
 |---|---|
@@ -46,6 +52,7 @@ and the `*.json` files are gitignored.
 | Key | Type | Effect |
 |---|---|---|
 | `power_kw` | number | Overrides the trading schedule. Negative charges, e.g. `-5000`. The battery reports it as its `power_setpoint` |
+| `soc` | number | Holds the state of charge at this %, e.g. `50`. Charging stops at 95%, so this keeps a test of charging from depending on how full the battery happens to be |
 | `cooling_failure` | true/false | The container's HVAC stops, so cells heat up with current |
 | `fault` | true/false | Trips the battery |
 | `maintenance` | true/false | Stops it for planned work |

@@ -243,6 +243,9 @@ services:
       - ./prometheus:/app/prometheus:ro
       - ./docs:/app/docs:ro
       - ./grafana:/app/grafana:ro
+      - ./alertmanager:/app/alertmanager:ro
+      - ./scenarios:/app/scenarios:ro
+      - ./scripts:/app/scripts:ro
     network_mode: none
     restart: "no"
 

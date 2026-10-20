@@ -93,7 +93,7 @@ class DashboardTest(unittest.TestCase):
                         mappings = panel["fieldConfig"]["defaults"]["mappings"][0]["options"]
                     self.assertEqual({k: v["text"] for k, v in mappings.items()}, expected)
 
-        def test_state_timelines_colour_by_their_mappings(self):
+    def test_state_timelines_colour_by_their_mappings(self):
         # A state timeline that merges values in "thresholds" colour mode swaps
         # every value for its threshold step before the mappings are looked at,
         # so every state comes out in the colour of one step.
