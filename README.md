@@ -7,6 +7,23 @@ and a substation) serving Modbus registers the way real equipment does, monitore
 Prometheus and Grafana across separate OT, DMZ and IT networks. Everything is simulated and
 generic.
 
+## What this demonstrates
+
+- **Segmentation, tested:** separate OT, DMZ and IT networks, joined by conduits that each carry
+  one protocol. The only way into OT is a gateway that passes Modbus reads and refuses writes,
+  proven from inside every network
+- **Alerts that know the physics:** output judged against what each unit's own wind or sunlight
+  allows, grid frequency against the Continental Europe SOGL criteria from the median of the
+  fleet's meters, transformer oil against the IEC 60076-7 thermal model
+- **No data is never no output:** silence has alerts and a colour of its own, and mutes everything
+  built on the missing data
+- **One cause, one page:** routing by severity and inhibition, tested with amtool and a real
+  Alertmanager
+- **Tested at every layer:** device models, contract tests between layers, alert rule tests
+  including the cases that must not fire, an end-to-end smoke test, and twelve rehearsed incidents
+- **Offline delivery:** one bundle with every image, verified by content, installed in CI with the
+  registries blocked
+
 ## Quick start
 
     cp .env.example .env                # then set GRAFANA_ADMIN_PASSWORD
@@ -229,12 +246,22 @@ Actions are pinned to commit SHAs, the token is read-only, and Dependabot propos
 pins. `tests/test_ci.py` fails if an action isn't pinned, or if CI stops running one of the lab's
 scripts.
 
+## Documentation
+
+- [Architecture](docs/architecture.md): how it fits together, from a register to a notification,
+  the design decisions and how it's tested
+- [Runbook](docs/runbook.md): what to check first for every alert
+- [From the lab to real plants](docs/real-plants.md): where real data comes from, why monitoring
+  reads through the station gateway and never from protection relays, IEC 60870-5-104, and
+  which way connections go
+- [Scenarios](scenarios/README.md): the files that change the simulated world
+
 ## Layout
 
     .github/        CI workflow and Dependabot
     alertmanager/   routing and inhibition, and their tests
     collector/      Telegraf config; telegraf.d/devices.conf is generated from the inventory
-    docs/           runbook
+    docs/           architecture, runbook, and what changes at a real plant
     grafana/        provisioning and dashboards
     prometheus/     Prometheus config, alert rules and their unit tests
     fleet/          device simulator, read-only Modbus gateway, register map (standard library only)
@@ -243,7 +270,7 @@ scripts.
     tests/          unit tests
     tools/          webhook-logger, the lab's stand-in for a pager
     inventory.toml  the asset list: every device, its site and the unit id it's reached by
-    
+
 ## Status
 
-Work in progress
+Complete as a lab. 
